@@ -663,42 +663,23 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                         if let call = call, let navigationController = mainWindow.viewController as? NavigationController {
                             mainWindow.hostView.containerView.endEditing(true)
                             
-                            if call.isStream {
-                                strongSelf.hasGroupCallOnScreenPromise.set(true)
-                                let groupCallController = MediaStreamComponentController(call: call)
-                                groupCallController.onViewDidAppear = { [weak self] in
-                                    if let strongSelf = self {
-                                        strongSelf.hasGroupCallOnScreenPromise.set(true)
-                                    }
+                            strongSelf.hasGroupCallOnScreenPromise.set(true)
+                            let groupCallController = VoiceChatControllerImpl(sharedContext: strongSelf, accountContext: call.accountContext, call: call)
+                            groupCallController.onViewDidAppear = { [weak self] in
+                                if let strongSelf = self {
+                                    strongSelf.hasGroupCallOnScreenPromise.set(true)
                                 }
-                                groupCallController.onViewDidDisappear = { [weak self] in
-                                    if let strongSelf = self {
-                                        strongSelf.hasGroupCallOnScreenPromise.set(false)
-                                    }
-                                }
-                                groupCallController.navigationPresentation = .flatModal
-                                groupCallController.parentNavigationController = navigationController
-                                strongSelf.groupCallController = groupCallController
-                                navigationController.pushViewController(groupCallController)
-                            } else {
-                                strongSelf.hasGroupCallOnScreenPromise.set(true)
-                                let groupCallController = VoiceChatControllerImpl(sharedContext: strongSelf, accountContext: call.accountContext, call: call)
-                                groupCallController.onViewDidAppear = { [weak self] in
-                                    if let strongSelf = self {
-                                        strongSelf.hasGroupCallOnScreenPromise.set(true)
-                                    }
-                                }
-                                groupCallController.onViewDidDisappear = { [weak self] in
-                                    if let strongSelf = self {
-                                        strongSelf.hasGroupCallOnScreenPromise.set(false)
-                                    }
-                                }
-                                groupCallController.navigationPresentation = .flatModal
-                                groupCallController.parentNavigationController = navigationController
-                                strongSelf.groupCallController = groupCallController
-                                navigationController.pushViewController(groupCallController)
                             }
-                                
+                            groupCallController.onViewDidDisappear = { [weak self] in
+                                if let strongSelf = self {
+                                    strongSelf.hasGroupCallOnScreenPromise.set(false)
+                                }
+                            }
+                            groupCallController.navigationPresentation = .flatModal
+                            groupCallController.parentNavigationController = navigationController
+                            strongSelf.groupCallController = groupCallController
+                            navigationController.pushViewController(groupCallController)
+                            
                             strongSelf.hasOngoingCall.set(true)
                         } else {
                             strongSelf.hasOngoingCall.set(false)
