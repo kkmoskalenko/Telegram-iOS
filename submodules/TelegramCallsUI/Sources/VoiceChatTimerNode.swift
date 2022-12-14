@@ -130,7 +130,7 @@ final class VoiceChatTimerNode: ASDisplayNode {
         self.maskView.frame = self.foregroundView.bounds
         
         let text: String = presentationStringsFormattedNumber(participants, groupingSeparator)
-        let subtitle = "listening"
+        let subtitle = "watching"
         
         self.titleNode.attributedText = NSAttributedString(string: "", font: Font.with(size: 23.0, design: .round, weight: .semibold, traits: []), textColor: .white)
         let titleSize = self.titleNode.updateLayout(size)

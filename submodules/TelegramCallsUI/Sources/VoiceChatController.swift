@@ -786,6 +786,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         fileprivate let audioButton: CallControllerButtonItemNode
         fileprivate let cameraButton: CallControllerButtonItemNode
         fileprivate let switchCameraButton: CallControllerButtonItemNode
+        fileprivate let expandButton: CallControllerButtonItemNode
         fileprivate let leaveButton: CallControllerButtonItemNode
         fileprivate let actionButton: VoiceChatActionButton
         private let leftBorderNode: ASDisplayNode
@@ -811,6 +812,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         
         private let titleNode: VoiceChatTitleNode
         private let participantsNode: VoiceChatTimerNode
+        private let participantsSeparator = ","
+        private let expandButtonTitle = "expand"
         
         private var enqueuedTransitions: [ListTransition] = []
         private var enqueuedFullscreenTransitions: [ListTransition] = []
@@ -1062,6 +1065,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.switchCameraButton = CallControllerButtonItemNode()
             self.switchCameraButton.alpha = 0.0
             self.switchCameraButton.isUserInteractionEnabled = false
+            self.expandButton = CallControllerButtonItemNode()
             self.leaveButton = CallControllerButtonItemNode()
             self.actionButton = VoiceChatActionButton()
             
@@ -1070,6 +1074,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 self.cameraButton.isUserInteractionEnabled = false
                 self.audioButton.alpha = 0.0
                 self.audioButton.isUserInteractionEnabled = false
+                self.expandButton.alpha = 0.0
+                self.expandButton.isUserInteractionEnabled = false
                 self.leaveButton.alpha = 0.0
                 self.leaveButton.isUserInteractionEnabled = false
             }
@@ -1843,6 +1849,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.bottomPanelNode.addSubnode(self.cameraButton)
             self.bottomPanelNode.addSubnode(self.audioButton)
             self.bottomPanelNode.addSubnode(self.switchCameraButton)
+            self.bottomPanelNode.addSubnode(self.expandButton)
             self.bottomPanelNode.addSubnode(self.leaveButton)
             self.bottomPanelNode.addSubnode(self.actionButton)
             self.bottomPanelNode.addSubnode(self.scheduleCancelButton)
@@ -1861,7 +1868,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.listContainer.addSubnode(self.topCornersNode)
             self.contentContainer.addSubnode(self.bottomGradientNode)
             self.contentContainer.addSubnode(self.bottomPanelBackgroundNode)
-//            self.contentContainer.addSubnode(self.participantsNode)
+            self.contentContainer.addSubnode(self.participantsNode)
             self.contentContainer.addSubnode(self.tileGridNode)
             self.contentContainer.addSubnode(self.mainStageContainerNode)
             self.contentContainer.addSubnode(self.transitionContainerNode)
@@ -1999,13 +2006,20 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 
                 let (title, isRecording) = titleAndRecording
                 if let peer = peerViewMainPeer(view) {
-                    let isLivestream: Bool
-                    if let channel = peer as? TelegramChannel, case .broadcast = channel.info {
-                        isLivestream = true
+                    strongSelf.participantsNode.isHidden = !strongSelf.isLivestream || strongSelf.isScheduled
+                    if strongSelf.isLivestream && !strongSelf.isScheduled {
+                        strongSelf.actionButton.alpha = 0.0
+                        strongSelf.actionButton.isUserInteractionEnabled = false
+                        
+                        strongSelf.expandButton.alpha = 1.0
+                        strongSelf.expandButton.isUserInteractionEnabled = true
                     } else {
-                        isLivestream = false
+                        strongSelf.actionButton.alpha = 1.0
+                        strongSelf.actionButton.isUserInteractionEnabled = true
+                        
+                        strongSelf.expandButton.alpha = 0.0
+                        strongSelf.expandButton.isUserInteractionEnabled = false
                     }
-                    strongSelf.participantsNode.isHidden = !isLivestream || strongSelf.isScheduled
                     
                     let hadPeer = strongSelf.peer != nil
                     strongSelf.peer = peer
@@ -2177,6 +2191,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 }
             })
             
+            self.expandButton.addTarget(self, action: #selector(self.expandPressed), forControlEvents: .touchUpInside)
             self.leaveButton.addTarget(self, action: #selector(self.leavePressed), forControlEvents: .touchUpInside)
             self.actionButton.addTarget(self, action: #selector(self.actionPressed), forControlEvents: .touchUpInside)
             self.audioButton.addTarget(self, action: #selector(self.audioPressed), forControlEvents: .touchUpInside)
@@ -3173,6 +3188,11 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.audioButton.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, damping: springDamping)
             self.audioButton.isUserInteractionEnabled = true
             
+            self.expandButton.alpha = 1.0
+            self.expandButton.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
+            self.expandButton.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, damping: springDamping)
+            self.expandButton.isUserInteractionEnabled = true
+            
             self.leaveButton.alpha = 1.0
             self.leaveButton.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
             self.leaveButton.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, damping: springDamping)
@@ -3245,6 +3265,11 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             let transition = ContainedViewLayoutTransition.animated(duration: 0.3, curve: .easeInOut)
             self.containerLayoutUpdated(layout, navigationHeight: navigationHeight, transition: transition)
             self.updateDecorationsLayout(transition: transition)
+        }
+        
+        @objc private func expandPressed() {
+            self.hapticFeedback.impact(.light)
+            // TODO: Handle expand button press
         }
         
         @objc private func leavePressed() {
@@ -3597,7 +3622,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         @objc private func audioPressed() {
             self.hapticFeedback.impact(.light)
                         
-            if let _ = self.callState?.scheduleTimestamp {
+            if self.callState?.scheduleTimestamp != nil || self.isLivestream {
                 if let callState = self.callState, let peer = self.peer, !callState.canManageCall && (peer.addressName?.isEmpty ?? true) {
                     return
                 }
@@ -4009,7 +4034,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             
             let participantsFrame = CGRect(x: 0.0, y: bottomCornersFrame.maxY - 100.0, width: size.width, height: 216.0)
             transition.updateFrame(node: self.participantsNode, frame: participantsFrame)
-            self.participantsNode.update(size: participantsFrame.size, participants: self.currentTotalCount, groupingSeparator: self.presentationData.dateTimeFormat.groupingSeparator, transition: .immediate)
+            self.participantsNode.update(size: participantsFrame.size, participants: self.currentTotalCount, groupingSeparator: self.participantsSeparator, transition: .immediate)
         }
         
         private var decorationsAreDark: Bool?
@@ -4242,7 +4267,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             let isScheduled = self.isScheduling || self.callState?.scheduleTimestamp != nil
             
             var isSoundEnabled = true
-            if isScheduled {
+            if isScheduled || isLivestream {
                 if let callState = self.callState, let peer = self.peer, !callState.canManageCall && (peer.addressName?.isEmpty ?? true) {
                     isSoundEnabled = false
                 } else {
@@ -4291,11 +4316,14 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.audioButton.update(size: audioButtonSize, content: CallControllerButtonItemNode.Content(appearance: soundAppearance, image: soundImage, isEnabled: isSoundEnabled), text: soundTitle, transition: transition)
             self.audioButton.isUserInteractionEnabled = isSoundEnabled
             
+            self.expandButton.update(size: sideButtonSize, content: CallControllerButtonItemNode.Content(appearance: normalButtonAppearance, image: .expand), text: self.expandButtonTitle, transition: .immediate)
+            
             self.leaveButton.update(size: sideButtonSize, content: CallControllerButtonItemNode.Content(appearance: .color(.custom(0xff3b30, 0.3)), image: .cancel), text: self.presentationData.strings.VoiceChat_Leave, transition: .immediate)
             
             transition.updateAlpha(node: self.cameraButton.textNode, alpha: buttonsTitleAlpha)
             transition.updateAlpha(node: self.switchCameraButton.textNode, alpha: buttonsTitleAlpha)
             transition.updateAlpha(node: self.audioButton.textNode, alpha: buttonsTitleAlpha)
+            transition.updateAlpha(node: self.expandButton.textNode, alpha: buttonsTitleAlpha)
             transition.updateAlpha(node: self.leaveButton.textNode, alpha: buttonsTitleAlpha)
         }
         
@@ -4786,6 +4814,12 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     })
                     transition.updateFrameAsPositionAndBounds(node: self.cameraButton, frame: secondButtonFrame)
                 }
+                
+                var expandButtonFrame = forthButtonFrame
+                expandButtonFrame.origin.x = (firstButtonFrame.midX + forthButtonFrame.midX - expandButtonFrame.width) / 2
+                expandButtonFrame.origin.y = (firstButtonFrame.midY + forthButtonFrame.midY - expandButtonFrame.height) / 2
+                transition.updateFrameAsPositionAndBounds(node: self.expandButton, frame: expandButtonFrame)
+                
                 transition.updateFrameAsPositionAndBounds(node: self.leaveButton, frame: forthButtonFrame)
             }
             if isFirstTime {
@@ -4862,12 +4896,15 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     self.actionButton.ignoreHierarchyChanges = true
                     self.audioButton.isHidden = false
                     self.cameraButton.isHidden = false
+                    self.expandButton.isHidden = false
                     self.leaveButton.isHidden = false
                     self.audioButton.layer.removeAllAnimations()
                     self.cameraButton.layer.removeAllAnimations()
+                    self.expandButton.layer.removeAllAnimations()
                     self.leaveButton.layer.removeAllAnimations()
                     self.bottomPanelNode.addSubnode(self.cameraButton)
                     self.bottomPanelNode.addSubnode(self.audioButton)
+                    self.bottomPanelNode.addSubnode(self.expandButton)
                     self.bottomPanelNode.addSubnode(self.leaveButton)
                     self.bottomPanelNode.addSubnode(self.actionButton)
                     self.containerLayoutUpdated(layout, navigationHeight: navigationHeight, transition: .immediate)
@@ -5054,13 +5091,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 displayPanelVideos = self.displayPanelVideos
             }
             
-//            let isLivestream: Bool
-//            if let channel = self.peer as? TelegramChannel, case .broadcast = channel.info {
-//                isLivestream = true
-//            } else {
-//                isLivestream = false
-//            }
-            
             let canManageCall = self.callState?.canManageCall ?? false
             
             var joinedVideo = self.joinedVideo ?? true
@@ -5076,9 +5106,9 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 let memberState: VoiceChatPeerEntry.State
                 var memberMuteState: GroupCallParticipantsContext.Participant.MuteState?
                 if member.hasRaiseHand && !(member.muteState?.canUnmute ?? true) {
-//                    if isLivestream && !canManageCall {
-//                        continue
-//                    }
+                    if isLivestream && !canManageCall {
+                        continue
+                    }
                     memberState = .raisedHand
                     memberMuteState = member.muteState
                     
@@ -5115,9 +5145,9 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                         self.raisedHandDisplayDisposables[member.peer.id] = nil
                     }
                     
-//                    if isLivestream && !(memberMuteState?.canUnmute ?? true) {
-//                        continue
-//                    }
+                    if isLivestream && !(memberMuteState?.canUnmute ?? true) {
+                        continue
+                    }
                 }
                 
                 var memberPeer = member.peer
@@ -6424,6 +6454,14 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             return self.isScheduling || self.callState?.scheduleTimestamp != nil
         }
         
+        private var isLivestream: Bool {
+            if let channel = self.peer as? TelegramChannel, case .broadcast = channel.info {
+                return true
+            } else {
+                return false
+            }
+        }
+        
         private func attachFullscreenVideos() {
             guard let (layout, _) = self.validLayout, case .compact = layout.metrics.widthClass else {
                 return
@@ -7014,7 +7052,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             return
         }
         
-        let overlayController = VoiceChatOverlayController(actionButton: self.controllerNode.actionButton, audioOutputNode: self.controllerNode.audioButton, cameraNode: self.controllerNode.cameraButton, leaveNode: self.controllerNode.leaveButton, navigationController: self.navigationController as? NavigationController, initiallyHidden: self.dismissedManually)
+        let overlayController = VoiceChatOverlayController(actionButton: self.controllerNode.actionButton, audioOutputNode: self.controllerNode.audioButton, cameraNode: self.controllerNode.cameraButton, expandNode: self.controllerNode.expandButton, leaveNode: self.controllerNode.leaveButton, navigationController: self.navigationController as? NavigationController, initiallyHidden: self.dismissedManually)
         if let navigationController = self.navigationController as? NavigationController {
             navigationController.presentOverlay(controller: overlayController, inGlobal: true, blockInteraction: false)
         }
@@ -7029,6 +7067,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                         strongSelf.controllerNode.actionButton.ignoreHierarchyChanges = true
                         strongSelf.controllerNode.bottomPanelNode.addSubnode(strongSelf.controllerNode.cameraButton)
                         strongSelf.controllerNode.bottomPanelNode.addSubnode(strongSelf.controllerNode.audioButton)
+                        strongSelf.controllerNode.bottomPanelNode.addSubnode(strongSelf.controllerNode.expandButton)
                         strongSelf.controllerNode.bottomPanelNode.addSubnode(strongSelf.controllerNode.leaveButton)
                         strongSelf.controllerNode.bottomPanelNode.addSubnode(strongSelf.controllerNode.actionButton)
                         

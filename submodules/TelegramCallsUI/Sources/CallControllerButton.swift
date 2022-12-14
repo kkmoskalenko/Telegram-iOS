@@ -47,6 +47,7 @@ final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
             case cancel
             case share
             case screencast
+            case expand
         }
         
         var appearance: Appearance
@@ -304,6 +305,8 @@ final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
                     if let iconImage = generateTintedImage(image: UIImage(bundleImageName: "Call/ScreenSharePhone"), color: imageColor) {
                         image = generateScaledImage(image: iconImage, size: iconImage.size.aspectFitted(CGSize(width: 38.0, height: 38.0)))
                     }
+                case .expand:
+                    image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallExpandButton"), color: imageColor)
                 }
             
                 if let image = image {
