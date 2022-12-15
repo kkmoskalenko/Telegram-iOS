@@ -40,6 +40,7 @@ private let smallButtonSize = CGSize(width: 36.0, height: 36.0)
 private let sideButtonSize = CGSize(width: 56.0, height: 56.0)
 private let topPanelHeight: CGFloat = 63.0
 let bottomAreaHeight: CGFloat = 206.0
+private let livestreamBottomAreaHeight: CGFloat = 166.0
 private let fullscreenBottomAreaHeight: CGFloat = 80.0
 private let bottomGradientHeight: CGFloat = 70.0
 
@@ -3805,11 +3806,11 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         
         private var effectiveBottomAreaHeight: CGFloat {
             if let (layout, _) = self.validLayout, case .regular = layout.metrics.widthClass {
-                return bottomAreaHeight
+                return isLivestream ? livestreamBottomAreaHeight : bottomAreaHeight
             }
             switch self.displayMode {
                 case .modal:
-                    return bottomAreaHeight
+                    return isLivestream ? livestreamBottomAreaHeight : bottomAreaHeight
                 case let .fullscreen(controlsHidden):
                     return controlsHidden ? 0.0 : fullscreenBottomAreaHeight
             }
@@ -4032,7 +4033,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 }
             }
             
-            let participantsFrame = CGRect(x: 0.0, y: bottomCornersFrame.maxY - 100.0, width: size.width, height: 216.0)
+            let participantsFrame = CGRect(x: 0.0, y: bottomCornersFrame.maxY - 95.0, width: size.width, height: 216.0)
             transition.updateFrame(node: self.participantsNode, frame: participantsFrame)
             self.participantsNode.update(size: participantsFrame.size, participants: self.currentTotalCount, groupingSeparator: self.participantsSeparator, transition: .immediate)
         }
@@ -4543,7 +4544,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             let centralButtonSize = CGSize(width: centralButtonSide, height: centralButtonSide)
             let cameraButtonSize = smallButtonSize
             let sideButtonMinimalInset: CGFloat = 16.0
-            let sideButtonOffset = min(42.0, floor((((contentWidth - 112.0) / 2.0) - sideButtonSize.width) / 2.0))
+            let sideButtonOffset = min(42.0, floor((((contentWidth - 112.0) / 2.0) - sideButtonSize.width) / 2.0)) - (isLivestream ? 10.0 : 0.0)
             let sideButtonOrigin = max(sideButtonMinimalInset, floor((contentWidth - 112.0) / 2.0) - sideButtonOffset - sideButtonSize.width)
                         
             let smallButtons: Bool

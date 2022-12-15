@@ -136,7 +136,7 @@ final class VoiceChatTimerNode: ASDisplayNode {
         let titleSize = self.titleNode.updateLayout(size)
         self.titleNode.frame = CGRect(x: floor((size.width - titleSize.width) / 2.0), y: 48.0, width: titleSize.width, height: titleSize.height)
         
-        self.timerNode.attributedText = NSAttributedString(string: text, font: Font.with(size: 68.0, design: .round, weight: .semibold, traits: [.monospacedNumbers]), textColor: .white)
+        self.timerNode.attributedText = NSAttributedString(string: text, font: Font.with(size: 45.0, design: .round, weight: .semibold, traits: [.monospacedNumbers]), textColor: .white)
         
         var timerSize = self.timerNode.updateLayout(CGSize(width: size.width + 100.0, height: size.height))
         if timerSize.width > size.width - 32.0 {
@@ -146,9 +146,9 @@ final class VoiceChatTimerNode: ASDisplayNode {
         
         self.timerNode.frame = CGRect(x: floor((size.width - timerSize.width) / 2.0), y: 78.0, width: timerSize.width, height: timerSize.height)
         
-        self.subtitleNode.attributedText = NSAttributedString(string: subtitle, font: Font.with(size: 21.0, design: .round, weight: .semibold, traits: []), textColor: .white)
+        self.subtitleNode.attributedText = NSAttributedString(string: subtitle, font: Font.with(size: 16.0, design: .round, weight: .semibold, traits: []), textColor: .white)
         let subtitleSize = self.subtitleNode.updateLayout(size)
-        self.subtitleNode.frame = CGRect(x: floor((size.width - subtitleSize.width) / 2.0), y: 164.0, width: subtitleSize.width, height: subtitleSize.height)
+        self.subtitleNode.frame = CGRect(x: floor((size.width - subtitleSize.width) / 2.0), y: 132.0, width: subtitleSize.width, height: subtitleSize.height)
         
         self.foregroundView.frame = CGRect(origin: CGPoint(), size: size)
     }
