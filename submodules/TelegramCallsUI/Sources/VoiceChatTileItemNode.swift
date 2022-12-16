@@ -43,12 +43,13 @@ final class VoiceChatTileItem: Equatable {
     let contextAction: ((ASDisplayNode, ContextGesture?) -> Void)?
     let getVideo: (GroupVideoNode.Position) -> GroupVideoNode?
     let getAudioLevel: (() -> Signal<Float, NoError>)?
+    let isTitleHidden: Bool
     
     var id: String {
         return self.videoEndpointId
     }
     
-    init(account: Account, peer: Peer, videoEndpointId: String, videoReady: Bool, videoTimeouted: Bool, isVideoLimit: Bool, videoLimit: Int32, isPaused: Bool, isOwnScreencast: Bool, strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder, speaking: Bool, secondary: Bool, isTablet: Bool, icon: Icon, text: VoiceChatParticipantItem.ParticipantText, additionalText: VoiceChatParticipantItem.ParticipantText?, action:  @escaping () -> Void, contextAction: ((ASDisplayNode, ContextGesture?) -> Void)?, getVideo: @escaping (GroupVideoNode.Position) -> GroupVideoNode?, getAudioLevel: (() -> Signal<Float, NoError>)?) {
+    init(account: Account, peer: Peer, videoEndpointId: String, videoReady: Bool, videoTimeouted: Bool, isVideoLimit: Bool, videoLimit: Int32, isPaused: Bool, isOwnScreencast: Bool, strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder, speaking: Bool, secondary: Bool, isTablet: Bool, icon: Icon, text: VoiceChatParticipantItem.ParticipantText, additionalText: VoiceChatParticipantItem.ParticipantText?, action:  @escaping () -> Void, contextAction: ((ASDisplayNode, ContextGesture?) -> Void)?, getVideo: @escaping (GroupVideoNode.Position) -> GroupVideoNode?, getAudioLevel: (() -> Signal<Float, NoError>)?, isTitleHidden: Bool = false) {
         self.account = account
         self.peer = peer
         self.videoEndpointId = videoEndpointId
@@ -70,6 +71,7 @@ final class VoiceChatTileItem: Equatable {
         self.contextAction = contextAction
         self.getVideo = getVideo
         self.getAudioLevel = getAudioLevel
+        self.isTitleHidden = isTitleHidden
     }
     
     static func == (lhs: VoiceChatTileItem, rhs: VoiceChatTileItem) -> Bool {
@@ -484,7 +486,8 @@ final class VoiceChatTileItemNode: ASDisplayNode {
                     microphoneColor = destructiveColor
                 }
             }
-            self.titleNode.attributedText = titleAttributedString
+            self.titleNode.attributedText = item.isTitleHidden ? nil : titleAttributedString
+            self.fadeNode.isHidden = item.isTitleHidden
             
             var hadMicrophoneNode = false
             var hadIconNode = false

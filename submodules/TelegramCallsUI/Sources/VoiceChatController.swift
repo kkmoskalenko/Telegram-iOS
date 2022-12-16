@@ -1067,6 +1067,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.switchCameraButton.alpha = 0.0
             self.switchCameraButton.isUserInteractionEnabled = false
             self.expandButton = CallControllerButtonItemNode()
+            self.expandButton.alpha = 0.0
+            self.expandButton.isUserInteractionEnabled = false
             self.leaveButton = CallControllerButtonItemNode()
             self.actionButton = VoiceChatActionButton()
             
@@ -2008,19 +2010,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 let (title, isRecording) = titleAndRecording
                 if let peer = peerViewMainPeer(view) {
                     strongSelf.participantsNode.isHidden = !strongSelf.isLivestream || strongSelf.isScheduled
-                    if strongSelf.isLivestream && !strongSelf.isScheduled {
-                        strongSelf.actionButton.alpha = 0.0
-                        strongSelf.actionButton.isUserInteractionEnabled = false
-                        
-                        strongSelf.expandButton.alpha = 1.0
-                        strongSelf.expandButton.isUserInteractionEnabled = true
-                    } else {
-                        strongSelf.actionButton.alpha = 1.0
-                        strongSelf.actionButton.isUserInteractionEnabled = true
-                        
-                        strongSelf.expandButton.alpha = 0.0
-                        strongSelf.expandButton.isUserInteractionEnabled = false
-                    }
                     
                     let hadPeer = strongSelf.peer != nil
                     strongSelf.peer = peer
@@ -3189,11 +3178,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.audioButton.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, damping: springDamping)
             self.audioButton.isUserInteractionEnabled = true
             
-            self.expandButton.alpha = 1.0
-            self.expandButton.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
-            self.expandButton.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, damping: springDamping)
-            self.expandButton.isUserInteractionEnabled = true
-            
             self.leaveButton.alpha = 1.0
             self.leaveButton.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
             self.leaveButton.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, damping: springDamping)
@@ -4317,7 +4301,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.audioButton.update(size: audioButtonSize, content: CallControllerButtonItemNode.Content(appearance: soundAppearance, image: soundImage, isEnabled: isSoundEnabled), text: soundTitle, transition: transition)
             self.audioButton.isUserInteractionEnabled = isSoundEnabled
             
-            self.expandButton.update(size: sideButtonSize, content: CallControllerButtonItemNode.Content(appearance: normalButtonAppearance, image: .expand), text: self.expandButtonTitle, transition: .immediate)
+            self.expandButton.update(size: sideButtonSize, content: CallControllerButtonItemNode.Content(appearance: normalButtonAppearance, image: .expand), text: self.expandButtonTitle, transition: transition)
             
             self.leaveButton.update(size: sideButtonSize, content: CallControllerButtonItemNode.Content(appearance: .color(.custom(0xff3b30, 0.3)), image: .cancel), text: self.presentationData.strings.VoiceChat_Leave, transition: .immediate)
             
@@ -4987,6 +4971,14 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 }
             }
             
+            if self.isLivestream {
+                self.participantsNode.isHidden = false
+                self.actionButton.alpha = 0.0
+                self.actionButton.isUserInteractionEnabled = false
+                self.expandButton.alpha = 1.0
+                self.expandButton.isUserInteractionEnabled = true
+            }
+            
             var options = ListViewDeleteAndInsertOptions()
             let isFirstTime = self.isFirstTime
             if isFirstTime {
@@ -5242,7 +5234,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     }
                 }
                 
-                if !isTile || isTablet || !joinedVideo {
+                if !isLivestream && (!isTile || isTablet || !joinedVideo) {
                     entries.append(.peer(peerEntry, index))
                 }
     
@@ -5269,9 +5261,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             }
             
             if isLivestream, let peer = self.peer {
-                tileItems.removeAll()
-                gridTileItems.removeAll()
-                
                 let endpointId = "unified"
                 peerIdToEndpointId[peer.id] = endpointId
                 
@@ -5309,7 +5298,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     
                     return GroupVideoNode(videoView: videoView, backdropVideoView: self?.videoRenderingContext.makeView(input: input, blur: true))
                 },
-                                                 getAudioLevel: nil)
+                                                 getAudioLevel: nil,
+                                                 isTitleHidden: true)
                 
                 tileByVideoEndpoint[endpointId] = tileItem
                 if isTablet {
@@ -6510,7 +6500,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         }
         
         private var isLivestream: Bool {
-            if let channel = self.peer as? TelegramChannel, case .broadcast = channel.info {
+            if let channel = self.peer as? TelegramChannel, case .broadcast = channel.info, self.call.isStream {
                 return true
             } else {
                 return false
