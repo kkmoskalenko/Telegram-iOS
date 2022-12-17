@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import AVKit
 import Display
 import AsyncDisplayKit
 import SwiftSignalKit
@@ -255,7 +256,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         case fullscreen(controlsHidden: Bool)
     }
     
-    fileprivate final class Node: ViewControllerTracingNode, UIGestureRecognizerDelegate {
+    fileprivate final class Node: ViewControllerTracingNode, UIGestureRecognizerDelegate, AVPictureInPictureControllerDelegate {
         private struct ListTransition {
             let deletions: [ListViewDeleteItem]
             let insertions: [ListViewInsertItem]
@@ -816,6 +817,9 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         private let participantsSeparator = ","
         private let expandButtonTitle = "expand"
         
+        private let isPictureInPictureSupported: Bool
+        private weak var livestreamVideoNode: GroupVideoNode?
+        
         private var enqueuedTransitions: [ListTransition] = []
         private var enqueuedFullscreenTransitions: [ListTransition] = []
         
@@ -973,6 +977,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.videoRenderingContext = VideoRenderingContext()
             
             self.isScheduling = call.schedulePending
+            self.isPictureInPictureSupported = call.isStream && AVPictureInPictureController.isPictureInPictureSupported()
                         
             let presentationData = sharedContext.currentPresentationData.with { $0 }
             self.presentationData = presentationData
@@ -1032,7 +1037,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.optionsButton = VoiceChatHeaderButton(context: self.context)
             self.optionsButton.setContent(.more(optionsCircleImage(dark: false)))
             self.closeButton = VoiceChatHeaderButton(context: self.context)
-            self.closeButton.setContent(.image(closeButtonImage(dark: false)))
+            self.closeButton.setContent(.image(closeButtonImage(dark: false, pipIcon: self.isPictureInPictureSupported)))
             self.panelButton = VoiceChatHeaderButton(context: self.context, wide: true)
             self.panelButton.setContent(.image(panelButtonImage(dark: false)))
             
@@ -3238,6 +3243,10 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         @objc private func closePressed() {
             self.controller?.dismiss(closing: false)
             self.controller?.dismissAllTooltips()
+            
+            if self.isPictureInPictureSupported {
+                self.livestreamVideoNode?.startPictureInPicture()
+            }
         }
         
         @objc private func panelPressed() {
@@ -4120,7 +4129,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 } completion: { _ in
                 }
 
-                self.closeButton.setContent(.image(closeButtonImage(dark: isFullscreen)), animated: transition.isAnimated)
+                self.closeButton.setContent(.image(closeButtonImage(dark: isFullscreen, pipIcon: self.isPictureInPictureSupported)), animated: transition.isAnimated)
                 self.optionsButton.setContent(.more(optionsCircleImage(dark: isFullscreen)), animated: transition.isAnimated)
                 self.panelButton.setContent(.image(panelButtonImage(dark: isFullscreen)), animated: transition.isAnimated)
             }
@@ -4900,6 +4909,10 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 self.controller?.currentOverlayController = nil
             })
             self.dimNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
+            
+            if self.isPictureInPictureSupported {
+                self.livestreamVideoNode?.stopPictureInPicture()
+            }
         }
         
         func animateOut(completion: (() -> Void)?) {
@@ -5293,10 +5306,14 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                                                  contextAction: nil,
                                                  getVideo: { [weak self] _ in
                     guard let call = self?.call as? PresentationGroupCallImpl, let input = call.video(endpointId: endpointId),
-                          let videoView = self?.videoRenderingContext.makeView(input: input, blur: false)
+                          let videoView = self?.videoRenderingContext.makeView(input: input, blur: false, forceSampleBufferDisplayLayer: true)
                     else { return nil }
                     
-                    return GroupVideoNode(videoView: videoView, backdropVideoView: self?.videoRenderingContext.makeView(input: input, blur: true))
+                    let videoNode = GroupVideoNode(videoView: videoView, backdropVideoView: self?.videoRenderingContext.makeView(input: input, blur: true))
+                    videoNode.setupPictureInPicture(delegate: self)
+                    self?.livestreamVideoNode = videoNode
+                    
+                    return videoNode
                 },
                                                  getAudioLevel: nil,
                                                  isTitleHidden: true)
@@ -6927,6 +6944,23 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                         }
                 }
             }
+        }
+        
+        func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
+            self.context.sharedContext.mainWindow?.inCallNavigate?()
+            completionHandler(true)
+        }
+        
+        func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+            self.controller?.dismiss(closing: false)
+        }
+        
+        func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+            self.livestreamVideoNode?.updateVideoViewIsEnabledForPictureInPicture()
+        }
+        
+        func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+            self.livestreamVideoNode?.updateVideoViewIsEnabledForPictureInPicture()
         }
     }
     

@@ -49,7 +49,7 @@ func panelButtonImage(dark: Bool) -> UIImage? {
     })
 }
 
-func closeButtonImage(dark: Bool) -> UIImage? {
+func closeButtonImage(dark: Bool, pipIcon: Bool) -> UIImage? {
     return generateImage(CGSize(width: 28.0, height: 28.0), contextGenerator: { size, context in
         context.clear(CGRect(origin: CGPoint(), size: size))
         
@@ -59,11 +59,21 @@ func closeButtonImage(dark: Bool) -> UIImage? {
         context.setLineWidth(2.0)
         context.setLineCap(.round)
         context.setStrokeColor(UIColor.white.cgColor)
+        context.setFillColor(UIColor.white.cgColor)
         
-        context.move(to: CGPoint(x: 7.0 + UIScreenPixel, y: 16.0 + UIScreenPixel))
-        context.addLine(to: CGPoint(x: 14.0, y: 10.0))
-        context.addLine(to: CGPoint(x: 21.0 - UIScreenPixel, y: 16.0 + UIScreenPixel))
-        context.strokePath()
+        if pipIcon, let image = UIImage(bundleImageName: "Call/CallPictureInPictureButton") {
+            let imageRect = CGRect(origin: .zero, size: image.size)
+            
+            context.saveGState()
+            context.clip(to: imageRect, mask: image.cgImage!)
+            context.fill(imageRect)
+            context.restoreGState()
+        } else {
+            context.move(to: CGPoint(x: 7.0 + UIScreenPixel, y: 16.0 + UIScreenPixel))
+            context.addLine(to: CGPoint(x: 14.0, y: 10.0))
+            context.addLine(to: CGPoint(x: 21.0 - UIScreenPixel, y: 16.0 + UIScreenPixel))
+            context.strokePath()
+        }
     })
 }
 

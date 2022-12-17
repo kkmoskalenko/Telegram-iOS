@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import AVKit
 import AsyncDisplayKit
 import Display
 import SwiftSignalKit
@@ -104,7 +105,8 @@ final class GroupVideoNode: ASDisplayNode, PreviewVideoNode {
     func updateIsEnabled(_ isEnabled: Bool) {
         self.isEnabled = isEnabled
 
-        self.videoView.updateIsEnabled(isEnabled)
+        let isPictureInPictureActive = self.pictureInPictureController?.isPictureInPictureActive == true
+        self.videoView.updateIsEnabled(isEnabled || isPictureInPictureActive)
         self.backdropVideoView?.updateIsEnabled(isEnabled && self.isBlurEnabled)
     }
     
@@ -369,6 +371,72 @@ final class GroupVideoNode: ASDisplayNode, PreviewVideoNode {
     func storeSnapshot() {
         if self.frame.size.width == 180.0 {
             self.snapshotView = self.view.snapshotView(afterScreenUpdates: false)
+        }
+    }
+    
+    // MARK: - Picture In Picture
+    
+    private var pictureInPictureController: AVPictureInPictureController?
+    
+    func startPictureInPicture() {
+        self.pictureInPictureController?.startPictureInPicture()
+    }
+    
+    func stopPictureInPicture() {
+        self.pictureInPictureController?.stopPictureInPicture()
+    }
+    
+    func updateVideoViewIsEnabledForPictureInPicture() {
+        guard let pictureInPictureController = self.pictureInPictureController,
+              pictureInPictureController.isPictureInPictureActive
+        else {
+            self.videoView.updateIsEnabled(self.isEnabled)
+            return
+        }
+        
+        self.videoView.updateIsEnabled(true)
+    }
+    
+    func setupPictureInPicture(delegate: AVPictureInPictureControllerDelegate? = nil) {
+        guard let sampleBufferVideoView = self.videoView as? SampleBufferVideoRenderingView else { return }
+        
+        if #available(iOS 13.0, *) {
+            sampleBufferVideoView.sampleBufferLayer.preventsDisplaySleepDuringVideoPlayback = true
+        }
+        
+        if #available(iOSApplicationExtension 15.0, iOS 15.0, *), AVPictureInPictureController.isPictureInPictureSupported() {
+            final class PlaybackDelegateImpl: NSObject, AVPictureInPictureSampleBufferPlaybackDelegate {
+                func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool) {
+                }
+                
+                func pictureInPictureControllerTimeRangeForPlayback(_ pictureInPictureController: AVPictureInPictureController) -> CMTimeRange {
+                    return CMTimeRange(start: .zero, duration: .positiveInfinity)
+                }
+                
+                func pictureInPictureControllerIsPlaybackPaused(_ pictureInPictureController: AVPictureInPictureController) -> Bool {
+                    return false
+                }
+                
+                func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {
+                }
+                
+                func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
+                    completionHandler()
+                }
+                
+                public func pictureInPictureControllerShouldProhibitBackgroundAudioPlayback(_ pictureInPictureController: AVPictureInPictureController) -> Bool {
+                    return false
+                }
+            }
+            
+            let contentSource = AVPictureInPictureController.ContentSource(sampleBufferDisplayLayer: sampleBufferVideoView.sampleBufferLayer, playbackDelegate: PlaybackDelegateImpl())
+            let pictureInPictureController = AVPictureInPictureController(contentSource: contentSource)
+            
+            pictureInPictureController.canStartPictureInPictureAutomaticallyFromInline = true
+            pictureInPictureController.requiresLinearPlayback = true
+            pictureInPictureController.delegate = delegate
+            
+            self.pictureInPictureController = pictureInPictureController
         }
     }
 }
