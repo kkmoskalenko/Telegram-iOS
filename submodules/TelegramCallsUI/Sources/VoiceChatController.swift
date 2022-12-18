@@ -4191,7 +4191,12 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 speaking = false
             }
             
-            self.titleNode.update(size: CGSize(width: self.titleNode.bounds.width, height: 44.0), title: title, subtitle: subtitle, speaking: speaking, slide: slide, transition: transition)
+            let titleNodeSize = CGSize(width: self.titleNode.bounds.width, height: 44.0)
+            if self.isLivestream {
+                self.titleNode.update(size: titleNodeSize, title: self.currentTitle)
+            } else {
+                self.titleNode.update(size: titleNodeSize, title: title, subtitle: subtitle, speaking: speaking, slide: slide, transition: transition)
+            }
         }
         
         private func updateButtons(transition: ContainedViewLayoutTransition) {
@@ -5292,11 +5297,15 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     latestWideVideo = endpointId
                 }
                 
+                let videoReady = self.readyVideoEndpointIds.contains(endpointId)
+                let videoTimeouted = self.timeoutedEndpointIds.contains(endpointId)
+                self.titleNode.isLivestreamActive = videoReady && !videoTimeouted
+                
                 let tileItem = VoiceChatTileItem(account: self.context.account,
                                                  peer: peer,
                                                  videoEndpointId: endpointId,
-                                                 videoReady: self.readyVideoEndpointIds.contains(endpointId),
-                                                 videoTimeouted: self.timeoutedEndpointIds.contains(endpointId),
+                                                 videoReady: videoReady,
+                                                 videoTimeouted: videoTimeouted,
                                                  isVideoLimit: false,
                                                  videoLimit: 0,
                                                  isPaused: false,
