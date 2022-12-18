@@ -4033,7 +4033,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 }
             }
             
-            let participantsFrame = CGRect(x: 0.0, y: bottomCornersFrame.maxY - 95.0, width: size.width, height: 216.0)
+            let participantsFrame = CGRect(x: 0.0, y: bottomCornersFrame.maxY - 119.0, width: size.width, height: 216.0)
             transition.updateFrame(node: self.participantsNode, frame: participantsFrame)
             self.participantsNode.update(size: participantsFrame.size, participants: self.currentTotalCount, groupingSeparator: self.participantsSeparator, transition: .immediate)
         }

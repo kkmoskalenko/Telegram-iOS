@@ -6,7 +6,7 @@ import SwiftSignalKit
 import AccountContext
 
 private let tileSpacing: CGFloat = 4.0
-let tileHeight: CGFloat = 180.0
+let tileHeight: CGFloat = 204.0
 
 enum VoiceChatTileLayoutMode {
     case pairs
