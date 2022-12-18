@@ -3263,7 +3263,14 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         
         @objc private func expandPressed() {
             self.hapticFeedback.impact(.light)
-            // TODO: Handle expand button press
+            
+            if self.isLivestream, let peer = self.peer {
+                self.currentDominantSpeaker = (peer.id, "unified", CACurrentMediaTime() + 3.0)
+                self.updateDisplayMode(.fullscreen(controlsHidden: false))
+                
+                // TODO: Inspect possible issues with this call
+                self.updateMainVideo(waitForFullSize: false, force: true)
+            }
         }
         
         @objc private func leavePressed() {
@@ -5322,6 +5329,27 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 if isTablet {
                     gridTileByVideoEndpoint[endpointId] = tileItem
                 }
+                
+                let fullscreenEntry = VoiceChatPeerEntry(peer: peer,
+                                                         about: nil,
+                                                         isMyPeer: self.callState?.myPeerId == peer.id,
+                                                         videoEndpointId: endpointId,
+                                                         videoPaused: false,
+                                                         presentationEndpointId: nil,
+                                                         presentationPaused: false,
+                                                         effectiveSpeakerVideoEndpointId: self.effectiveSpeaker?.1,
+                                                         state: .listening,
+                                                         muteState: .none,
+                                                         canManageCall: false,
+                                                         volume: nil,
+                                                         raisedHand: false,
+                                                         displayRaisedHandStatus: false,
+                                                         active: peer.id == self.effectiveSpeaker?.0,
+                                                         isLandscape: self.isLandscape)
+                fullscreenEntries.append(.peer(fullscreenEntry, fullscreenIndex))
+                processedFullscreenPeerIds.insert(fullscreenEntry.peer.id)
+                mainEntry = fullscreenEntry
+                fullscreenIndex += 1
             }
             
             var temporaryList: [String] = []
