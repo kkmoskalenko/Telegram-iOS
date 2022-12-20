@@ -812,6 +812,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         private let scheduleCancelButton: SolidRoundedButtonNode
         private var scheduleButtonTitle = ""
         
+        private let isLivestream: Bool
         private let titleNode: VoiceChatTitleNode
         private let participantsNode: VoiceChatTimerNode
         private let participantsSeparator = ","
@@ -977,6 +978,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.videoRenderingContext = VideoRenderingContext()
             
             self.isScheduling = call.schedulePending
+            self.isLivestream = call.isStream
             self.isPictureInPictureSupported = call.isStream && AVPictureInPictureController.isPictureInPictureSupported()
                         
             let presentationData = sharedContext.currentPresentationData.with { $0 }
@@ -992,14 +994,14 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.contentContainer.isHidden = true
             
             self.backgroundNode = ASDisplayNode()
-            self.backgroundNode.backgroundColor = self.isScheduling ? panelBackgroundColor : secondaryPanelBackgroundColor
+            self.backgroundNode.backgroundColor = self.isScheduling || self.isLivestream ? panelBackgroundColor : secondaryPanelBackgroundColor
             self.backgroundNode.clipsToBounds = false
             
             self.listContainer = ASDisplayNode()
             
             self.listNode = ListView()
-            self.listNode.alpha = self.isScheduling ? 0.0 : 1.0
-            self.listNode.isUserInteractionEnabled = !self.isScheduling
+            self.listNode.alpha = self.isScheduling || self.isLivestream ? 0.0 : 1.0
+            self.listNode.isUserInteractionEnabled = !self.isScheduling && !self.isLivestream
             self.listNode.verticalScrollIndicatorColor = UIColor(white: 1.0, alpha: 0.3)
             self.listNode.clipsToBounds = true
             self.listNode.scroller.bounces = false
@@ -4026,7 +4028,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 }
             }
             
-            let participantsFrame = CGRect(x: 0.0, y: bottomCornersFrame.maxY - 119.0, width: size.width, height: 216.0)
+            let participantsFrame = CGRect(x: 0.0, y: layout.size.height - bottomPanelHeight - 93.0, width: size.width, height: 216.0)
             transition.updateFrame(node: self.participantsNode, frame: participantsFrame)
             self.participantsNode.update(size: participantsFrame.size, participants: self.currentTotalCount, groupingSeparator: self.participantsSeparator, transition: .immediate)
         }
@@ -4062,8 +4064,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             let backgroundColor: UIColor
             if case .fullscreen = effectiveDisplayMode {
                 backgroundColor = isFullscreen ? panelBackgroundColor : secondaryPanelBackgroundColor
-            } else if self.isScheduling || self.callState?.scheduleTimestamp != nil {
-                backgroundColor = panelBackgroundColor
+            } else if self.isScheduling || self.callState?.scheduleTimestamp != nil || self.isLivestream {
+                backgroundColor = isFullscreen ? fullscreenBackgroundColor : panelBackgroundColor
             } else {
                 backgroundColor = isFullscreen ? panelBackgroundColor : secondaryPanelBackgroundColor
             }
@@ -4984,7 +4986,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     self.listNode.isUserInteractionEnabled = false
                     self.backgroundNode.backgroundColor = panelBackgroundColor
                     self.updateDecorationsColors()
-                } else if callState.scheduleTimestamp == nil && !self.isScheduling && self.listNode.alpha == 0.0 {
+                } else if callState.scheduleTimestamp == nil && !self.isScheduling && !self.isLivestream && self.listNode.alpha == 0.0 {
                     self.transitionToCall()
                 }
             }
@@ -5117,9 +5119,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 let memberState: VoiceChatPeerEntry.State
                 var memberMuteState: GroupCallParticipantsContext.Participant.MuteState?
                 if member.hasRaiseHand && !(member.muteState?.canUnmute ?? true) {
-                    if isLivestream && !canManageCall {
-                        continue
-                    }
                     memberState = .raisedHand
                     memberMuteState = member.muteState
                     
@@ -5154,10 +5153,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     if let disposable = self.raisedHandDisplayDisposables[member.peer.id] {
                         disposable.dispose()
                         self.raisedHandDisplayDisposables[member.peer.id] = nil
-                    }
-                    
-                    if isLivestream && !(memberMuteState?.canUnmute ?? true) {
-                        continue
                     }
                 }
                 
@@ -5252,7 +5247,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     }
                 }
                 
-                if !isLivestream && (!isTile || isTablet || !joinedVideo) {
+                if !isTile || isTablet || !joinedVideo {
                     entries.append(.peer(peerEntry, index))
                 }
     
@@ -5427,7 +5422,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     inviteIsLink = true
                 }
             }
-            if canInvite && !isLivestream {
+            if canInvite {
                 entries.append(.invite(self.presentationData.theme, self.presentationData.strings, inviteIsLink ? self.presentationData.strings.VoiceChat_Share : self.presentationData.strings.VoiceChat_InviteMember, inviteIsLink))
             }
             
@@ -6463,14 +6458,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         
         private var isScheduled: Bool {
             return self.isScheduling || self.callState?.scheduleTimestamp != nil
-        }
-        
-        private var isLivestream: Bool {
-            if let channel = self.peer as? TelegramChannel, case .broadcast = channel.info, self.call.isStream {
-                return true
-            } else {
-                return false
-            }
         }
         
         private func attachFullscreenVideos() {
