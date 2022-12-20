@@ -3263,14 +3263,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         
         @objc private func expandPressed() {
             self.hapticFeedback.impact(.light)
-            
-            if self.isLivestream, let peer = self.peer {
-                self.currentDominantSpeaker = (peer.id, "unified", CACurrentMediaTime() + 3.0)
-                self.updateDisplayMode(.fullscreen(controlsHidden: false))
-                
-                // TODO: Inspect possible issues with this call
-                self.updateMainVideo(waitForFullSize: false, force: true)
-            }
+            // TODO: Handle expand button press
         }
         
         @objc private func leavePressed() {
@@ -5285,82 +5278,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 }
             }
             
-            if isLivestream, let peer = self.peer {
-                let endpointId = "unified"
-                peerIdToEndpointId[peer.id] = endpointId
-                
-                if !self.videoOrder.contains(endpointId) {
-                    self.videoOrder.append(endpointId)
-                }
-                
-                if self.wideVideoNodes.contains(endpointId) {
-                    latestWideVideo = endpointId
-                }
-                
-                let videoReady = self.readyVideoEndpointIds.contains(endpointId)
-                let videoTimeouted = self.timeoutedEndpointIds.contains(endpointId)
-                self.titleNode.isLivestreamActive = videoReady && !videoTimeouted
-                
-                let tileItem = VoiceChatTileItem(account: self.context.account,
-                                                 peer: peer,
-                                                 videoEndpointId: endpointId,
-                                                 videoReady: videoReady,
-                                                 videoTimeouted: videoTimeouted,
-                                                 isVideoLimit: false,
-                                                 videoLimit: 0,
-                                                 isPaused: false,
-                                                 isOwnScreencast: false,
-                                                 strings: self.presentationData.strings,
-                                                 nameDisplayOrder: self.presentationData.nameDisplayOrder,
-                                                 speaking: false,
-                                                 secondary: false,
-                                                 isTablet: isTablet,
-                                                 icon: .none,
-                                                 text: .none,
-                                                 additionalText: nil,
-                                                 action: {},
-                                                 contextAction: nil,
-                                                 getVideo: { [weak self] _ in
-                    guard let call = self?.call as? PresentationGroupCallImpl, let input = call.video(endpointId: endpointId),
-                          let videoView = self?.videoRenderingContext.makeView(input: input, blur: false, forceSampleBufferDisplayLayer: true)
-                    else { return nil }
-                    
-                    let videoNode = GroupVideoNode(videoView: videoView, backdropVideoView: self?.videoRenderingContext.makeView(input: input, blur: true))
-                    videoNode.setupPictureInPicture(delegate: self)
-                    self?.livestreamVideoNode = videoNode
-                    
-                    return videoNode
-                },
-                                                 getAudioLevel: nil,
-                                                 isTitleHidden: true)
-                
-                tileByVideoEndpoint[endpointId] = tileItem
-                if isTablet {
-                    gridTileByVideoEndpoint[endpointId] = tileItem
-                }
-                
-                let fullscreenEntry = VoiceChatPeerEntry(peer: peer,
-                                                         about: nil,
-                                                         isMyPeer: self.callState?.myPeerId == peer.id,
-                                                         videoEndpointId: endpointId,
-                                                         videoPaused: false,
-                                                         presentationEndpointId: nil,
-                                                         presentationPaused: false,
-                                                         effectiveSpeakerVideoEndpointId: self.effectiveSpeaker?.1,
-                                                         state: .listening,
-                                                         muteState: .none,
-                                                         canManageCall: false,
-                                                         volume: nil,
-                                                         raisedHand: false,
-                                                         displayRaisedHandStatus: false,
-                                                         active: peer.id == self.effectiveSpeaker?.0,
-                                                         isLandscape: self.isLandscape)
-                fullscreenEntries.append(.peer(fullscreenEntry, fullscreenIndex))
-                processedFullscreenPeerIds.insert(fullscreenEntry.peer.id)
-                mainEntry = fullscreenEntry
-                fullscreenIndex += 1
-            }
-            
             var temporaryList: [String] = []
             for tileVideoEndpoint in self.videoOrder {
                 if let _ = tileByVideoEndpoint[tileVideoEndpoint] {
@@ -5603,18 +5520,13 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
 
         private func filterRequestedVideoChannels(channels: [PresentationGroupCallRequestedVideo]) {
             var validSources = Set<String>()
-            var endpoints = channels.map(\.endpointId)
-            if isLivestream {
-                endpoints.append("unified")
-            }
-            
-            for endpointId in endpoints {
-                validSources.insert(endpointId)
+            for channel in channels {
+                validSources.insert(channel.endpointId)
 
-                if !self.requestedVideoSources.contains(endpointId) {
-                    self.requestedVideoSources.insert(endpointId)
+                if !self.requestedVideoSources.contains(channel.endpointId) {
+                    self.requestedVideoSources.insert(channel.endpointId)
 
-                    let input = (self.call as! PresentationGroupCallImpl).video(endpointId: endpointId)
+                    let input = (self.call as! PresentationGroupCallImpl).video(endpointId: channel.endpointId)
                     if let input = input, let videoView = self.videoRenderingContext.makeView(input: input, blur: false) {
                         let videoNode = GroupVideoNode(videoView: videoView, backdropVideoView: self.videoRenderingContext.makeView(input: input, blur: true))
 
@@ -5624,20 +5536,20 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                             if let strongSelf = self, let videoNode = videoNode {
                                 Queue.mainQueue().after(0.1) {
                                     if timeouted && !ready {
-                                        strongSelf.timeoutedEndpointIds.insert(endpointId)
-                                        strongSelf.readyVideoEndpointIds.remove(endpointId)
+                                        strongSelf.timeoutedEndpointIds.insert(channel.endpointId)
+                                        strongSelf.readyVideoEndpointIds.remove(channel.endpointId)
                                         strongSelf.readyVideoEndpointIdsPromise.set(strongSelf.readyVideoEndpointIds)
-                                        strongSelf.wideVideoNodes.remove(endpointId)
+                                        strongSelf.wideVideoNodes.remove(channel.endpointId)
 
                                         strongSelf.updateMembers()
                                     } else if ready {
-                                        strongSelf.readyVideoEndpointIds.insert(endpointId)
+                                        strongSelf.readyVideoEndpointIds.insert(channel.endpointId)
                                         strongSelf.readyVideoEndpointIdsPromise.set(strongSelf.readyVideoEndpointIds)
-                                        strongSelf.timeoutedEndpointIds.remove(endpointId)
+                                        strongSelf.timeoutedEndpointIds.remove(channel.endpointId)
                                         if videoNode.aspectRatio <= 0.77 {
-                                            strongSelf.wideVideoNodes.insert(endpointId)
+                                            strongSelf.wideVideoNodes.insert(channel.endpointId)
                                         } else {
-                                            strongSelf.wideVideoNodes.remove(endpointId)
+                                            strongSelf.wideVideoNodes.remove(channel.endpointId)
                                         }
                                         strongSelf.updateMembers()
 
@@ -5647,7 +5559,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                                                     let entry = strongSelf.currentFullscreenEntries[i]
                                                     switch entry {
                                                     case let .peer(peerEntry, _):
-                                                        if peerEntry.effectiveVideoEndpointId == endpointId {
+                                                        if peerEntry.effectiveVideoEndpointId == channel.endpointId {
                                                             let presentationData = strongSelf.presentationData.withUpdated(theme: strongSelf.darkTheme)
                                                             strongSelf.fullscreenListNode.transaction(deleteIndices: [], insertIndicesAndItems: [], updateIndicesAndItems: [ListViewUpdateItem(index: i, previousIndex: i, item: entry.fullscreenItem(context: strongSelf.context, presentationData: presentationData, interaction: interaction), directionHint: nil)], options: [.Synchronous], updateOpaqueState: nil)
                                                             break loop
@@ -5661,8 +5573,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                                     }
                                 }
                             }
-                        }), forKey: endpointId)
-                        self.videoNodes[endpointId] = videoNode
+                        }), forKey: channel.endpointId)
+                        self.videoNodes[channel.endpointId] = videoNode
 
                         if let _ = self.validLayout {
                             self.updateMembers()
