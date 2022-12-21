@@ -1,5 +1,6 @@
 import AsyncDisplayKit
 import AVKit
+import Display
 import SwiftSignalKit
 import TelegramVoip
 
@@ -11,6 +12,15 @@ private enum Constants {
 }
 
 final class StreamVideoNode: ASDisplayNode {
+    
+    var tapped: (() -> Void)? {
+        get { self.groupVideoNode?.tapped }
+        set { self.groupVideoNode?.tapped = newValue }
+    }
+    
+    var isLandscape: Bool {
+        (groupVideoNode?.aspectRatio ?? 1.0) < 1.0
+    }
     
     private var groupVideoNode: GroupVideoNode?
     private var videoGlowView: VideoRenderingView?
@@ -55,19 +65,24 @@ final class StreamVideoNode: ASDisplayNode {
         }
     }
     
-    func update(size: CGSize) {
+    func update(size: CGSize, transition: ContainedViewLayoutTransition) {
         let videoBounds = CGRect(origin: .zero, size: size)
         
-        self.groupVideoNode?.updateIsEnabled(true)
-        self.groupVideoNode?.frame = videoBounds
-        self.groupVideoNode?.updateLayout(size: size, layoutMode: .fit, transition: .immediate)
+        if let videoNode = self.groupVideoNode {
+            videoNode.updateIsEnabled(true)
+            videoNode.updateLayout(size: size, layoutMode: .fit, transition: transition)
+            transition.updateFrame(node: videoNode, frame: videoBounds)
+        }
         
-        self.videoGlowView?.updateIsEnabled(true)
-        self.videoGlowView?.frame = videoBounds.insetBy(dx: -Constants.glowVideoInset, dy: -Constants.glowVideoInset)
-        self.videoGlowMask.frame = videoBounds
+        if let glowView = self.videoGlowView {
+            glowView.updateIsEnabled(true)
+            let glowViewFrame = videoBounds.insetBy(dx: -Constants.glowVideoInset, dy: -Constants.glowVideoInset)
+            transition.updateFrame(view: glowView, frame: glowViewFrame)
+        }
         
         let glowPath = UIBezierPath(roundedRect: videoBounds, cornerRadius: Constants.cornerRadius).cgPath
-        self.videoGlowMask.path = glowPath
         self.videoGlowMask.shadowPath = glowPath
+        transition.updatePath(layer: self.videoGlowMask, path: glowPath)
+        transition.updateFrame(layer: self.videoGlowMask, frame: videoBounds)
     }
 }
