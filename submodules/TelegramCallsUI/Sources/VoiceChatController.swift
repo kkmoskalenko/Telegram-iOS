@@ -44,6 +44,8 @@ let bottomAreaHeight: CGFloat = 206.0
 private let livestreamBottomAreaHeight: CGFloat = 166.0
 private let fullscreenBottomAreaHeight: CGFloat = 80.0
 private let bottomGradientHeight: CGFloat = 70.0
+private let streamVideoHeight: CGFloat = 201.0
+private let streamVideoPadding: CGFloat = 16.0
 
 func decorationCornersImage(top: Bool, bottom: Bool, dark: Bool) -> UIImage? {
     if !top && !bottom {
@@ -819,6 +821,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         private let expandButtonTitle = "expand"
         
         private let isPictureInPictureSupported: Bool
+        private let streamVideoNode: StreamVideoNode
         private weak var livestreamVideoNode: GroupVideoNode?
         
         private var enqueuedTransitions: [ListTransition] = []
@@ -1157,6 +1160,9 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             
             self.timerNode = VoiceChatTimerNode(strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat)
             self.timerNode.isHidden = true
+            
+            self.streamVideoNode = StreamVideoNode(call: call as! PresentationGroupCallImpl)
+            self.streamVideoNode.isHidden = !self.isLivestream
             
             self.participantsNode = VoiceChatTimerNode(strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat)
             
@@ -1878,6 +1884,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.listContainer.addSubnode(self.topCornersNode)
             self.contentContainer.addSubnode(self.bottomGradientNode)
             self.contentContainer.addSubnode(self.bottomPanelBackgroundNode)
+            self.contentContainer.addSubnode(self.streamVideoNode)
             self.contentContainer.addSubnode(self.participantsNode)
             self.contentContainer.addSubnode(self.tileGridNode)
             self.contentContainer.addSubnode(self.mainStageContainerNode)
@@ -4442,6 +4449,11 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             transition.updateFrameAsPositionAndBounds(node: self.listContainer, frame: CGRect(origin: CGPoint(), size: size))
             transition.updateFrame(node: self.listNode, frame: CGRect(origin: CGPoint(x: contentLeftInset.isZero ? floorToScreenPixels((size.width - contentWidth) / 2.0) : contentLeftInset, y: listTopInset + topInset), size: listSize))
             
+            let streamVideoFrame = CGRect(x: contentLeftInset.isZero ? floorToScreenPixels((size.width - contentWidth) / 2.0) : contentLeftInset,
+                                          y: listTopInset + topInset, width: contentWidth, height: streamVideoHeight).insetBy(dx: streamVideoPadding, dy: 0.0)
+            transition.updateFrame(node: self.streamVideoNode, frame: streamVideoFrame)
+            self.streamVideoNode.update(size: streamVideoFrame.size)
+            
             let tileGridSize = CGSize(width: max(0.0, contentLeftInset - sideInset), height: size.height - layout.intrinsicInsets.bottom - listTopInset - topInset)
             
             if contentLeftInset > 0.0 {
@@ -5656,6 +5668,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     self.readyVideoDisposables.set(nil, forKey: videoEndpointId)
                 }
             }
+            
+            self.streamVideoNode.updateVideo()
         }
         
         private func updateMainVideo(waitForFullSize: Bool, entries: [ListEntry]? = nil, updateMembers: Bool = true, force: Bool = false, completion: (() -> Void)? = nil) {
