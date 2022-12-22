@@ -25,6 +25,8 @@ final class StreamVideoNode: ASDisplayNode {
         (groupVideoNode?.aspectRatio ?? 1.0) < 1.0
     }
     
+    var onVideoReady: (() -> Void)?
+    
     private var groupVideoNode: GroupVideoNode?
     private var videoGlowView: VideoRenderingView?
     private var shimmeringNode: StreamShimmeringNode?
@@ -65,19 +67,23 @@ final class StreamVideoNode: ASDisplayNode {
         self.shimmeringNode = shimmeringNode
     }
     
-    func updateVideo() {
+    func updateVideo(pictureInPictureControllerDelegate: AVPictureInPictureControllerDelegate? = nil) {
         guard self.call.isStream, self.groupVideoNode == nil, let input = self.call.video(endpointId: "unified") else { return }
         
         if let videoView = self.videoRenderingContext.makeView(input: input, blur: false, forceSampleBufferDisplayLayer: true),
            let videoBlurView = self.videoRenderingContext.makeView(input: input, blur: true),
            let videoGlowView = self.videoRenderingContext.makeView(input: input, blur: true) {
             let groupVideoNode = GroupVideoNode(videoView: videoView, backdropVideoView: videoBlurView)
+            groupVideoNode.setupPictureInPicture(delegate: pictureInPictureControllerDelegate)
             groupVideoNode.cornerRadius = Constants.cornerRadius
             if #available(iOS 13.0, *) {
                 groupVideoNode.layer.cornerCurve = .continuous
             }
             self.disposable = groupVideoNode.ready.start(next: { [weak self] ready in
                 self?.videoReady = ready
+                if ready {
+                    self?.onVideoReady?()
+                }
                 
                 if let shimmerNode = self?.shimmeringNode, ready {
                     DispatchQueue.main.async {
@@ -133,6 +139,18 @@ final class StreamVideoNode: ASDisplayNode {
         self.videoGlowMask.shadowPath = glowPath
         transition.updatePath(layer: self.videoGlowMask, path: glowPath)
         transition.updateFrame(layer: self.videoGlowMask, frame: videoBounds)
+    }
+    
+    func startPictureInPicture() {
+        self.groupVideoNode?.startPictureInPicture()
+    }
+    
+    func stopPictureInPicture() {
+        self.groupVideoNode?.stopPictureInPicture()
+    }
+    
+    func updateVideoViewIsEnabledForPictureInPicture() {
+        self.groupVideoNode?.updateVideoViewIsEnabledForPictureInPicture()
     }
 }
 

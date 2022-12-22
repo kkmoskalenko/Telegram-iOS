@@ -824,7 +824,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         private var initialOrientation: UIInterfaceOrientation?
         private let isPictureInPictureSupported: Bool
         private let streamVideoNode: StreamVideoNode
-        private weak var livestreamVideoNode: GroupVideoNode?
         
         private var enqueuedTransitions: [ListTransition] = []
         private var enqueuedFullscreenTransitions: [ListTransition] = []
@@ -3297,10 +3296,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         @objc private func closePressed() {
             self.controller?.dismiss(closing: false)
             self.controller?.dismissAllTooltips()
-            
-            if self.isPictureInPictureSupported {
-                self.livestreamVideoNode?.startPictureInPicture()
-            }
         }
         
         @objc private func panelPressed() {
@@ -4995,7 +4990,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.dimNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
             
             if self.isPictureInPictureSupported {
-                self.livestreamVideoNode?.stopPictureInPicture()
+                self.streamVideoNode.stopPictureInPicture()
             }
         }
         
@@ -5734,7 +5729,14 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 }
             }
             
-            self.streamVideoNode.updateVideo()
+            if self.isLivestream {
+                self.streamVideoNode.updateVideo(pictureInPictureControllerDelegate: self)
+                self.streamVideoNode.onVideoReady = { [weak self] in
+                    DispatchQueue.main.async {
+                        self?.titleNode.isLivestreamActive = true
+                    }
+                }
+            }
         }
         
         private func updateMainVideo(waitForFullSize: Bool, entries: [ListEntry]? = nil, updateMembers: Bool = true, force: Bool = false, completion: (() -> Void)? = nil) {
@@ -6961,6 +6963,12 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             }
         }
         
+        func startPictureInPicture() {
+            if self.isPictureInPictureSupported {
+                self.streamVideoNode.startPictureInPicture()
+            }
+        }
+        
         func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
             self.context.sharedContext.mainWindow?.inCallNavigate?()
             completionHandler(true)
@@ -6971,11 +6979,11 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         }
         
         func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-            self.livestreamVideoNode?.updateVideoViewIsEnabledForPictureInPicture()
+            self.streamVideoNode.updateVideoViewIsEnabledForPictureInPicture()
         }
         
         func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-            self.livestreamVideoNode?.updateVideoViewIsEnabledForPictureInPicture()
+            self.streamVideoNode.updateVideoViewIsEnabledForPictureInPicture()
         }
     }
     
@@ -7119,6 +7127,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     }
                 }
             }
+            
+            self.controllerNode.startPictureInPicture()
         }
         
         self.dismiss()
