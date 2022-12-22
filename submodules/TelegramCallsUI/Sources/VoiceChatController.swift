@@ -2035,6 +2035,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     strongSelf.updateTitle(transition: .immediate)
                     strongSelf.titleNode.isRecording = isRecording
                     
+                    strongSelf.streamVideoNode.updatePeer(peer)
+                    
                     if strongSelf.isScheduling && !hadPeer {
                         strongSelf.updateScheduleButtonTitle()
                     }

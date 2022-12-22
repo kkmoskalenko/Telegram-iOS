@@ -1,7 +1,10 @@
 import AsyncDisplayKit
+import AvatarNode
 import AVKit
 import Display
+import Postbox
 import SwiftSignalKit
+import TelegramCore
 import TelegramVoip
 
 private enum Constants {
@@ -24,6 +27,7 @@ final class StreamVideoNode: ASDisplayNode {
     
     private var groupVideoNode: GroupVideoNode?
     private var videoGlowView: VideoRenderingView?
+    private var shimmeringNode: StreamShimmeringNode?
     
     private lazy var videoGlowMask: CAShapeLayer = {
         let shapeLayer = CAShapeLayer()
@@ -37,12 +41,28 @@ final class StreamVideoNode: ASDisplayNode {
     private let call: PresentationGroupCallImpl
     private let videoRenderingContext = VideoRenderingContext()
     
+    private var videoReady: Bool = false
+    private var disposable: Disposable?
+    
     init(call: PresentationGroupCallImpl) {
         self.call = call
         super.init()
         
         self.clipsToBounds = false
         self.layer.mask = self.videoGlowMask
+    }
+    
+    deinit {
+        self.disposable?.dispose()
+    }
+    
+    func updatePeer(_ peer: Peer) {
+        guard self.shimmeringNode == nil, !self.videoReady else { return }
+        
+        let shimmeringNode = StreamShimmeringNode(account: self.call.account, peer: peer)
+        shimmeringNode.isUserInteractionEnabled = false
+        self.addSubnode(shimmeringNode)
+        self.shimmeringNode = shimmeringNode
     }
     
     func updateVideo() {
@@ -56,17 +76,46 @@ final class StreamVideoNode: ASDisplayNode {
             if #available(iOS 13.0, *) {
                 groupVideoNode.layer.cornerCurve = .continuous
             }
+            self.disposable = groupVideoNode.ready.start(next: { [weak self] ready in
+                self?.videoReady = ready
+                
+                if let shimmerNode = self?.shimmeringNode, ready {
+                    DispatchQueue.main.async {
+                        self?.shimmeringNode = nil
+                        shimmerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false, completion: { [weak shimmerNode] _ in
+                            shimmerNode?.removeFromSupernode()
+                        })
+                    }
+                }
+            })
             
             self.groupVideoNode = groupVideoNode
             self.videoGlowView = videoGlowView
             
-            self.view.addSubview(videoGlowView)
-            self.addSubnode(groupVideoNode)
+            self.view.insertSubview(videoGlowView, at: 0)
+            if let shimmeringNode = self.shimmeringNode {
+                self.insertSubnode(groupVideoNode, belowSubnode: shimmeringNode)
+            } else {
+                self.addSubnode(groupVideoNode)
+            }
         }
     }
     
     func update(size: CGSize, transition: ContainedViewLayoutTransition) {
         let videoBounds = CGRect(origin: .zero, size: size)
+        
+        if let shimmerNode = self.shimmeringNode {
+            let shimmerTransition: ContainedViewLayoutTransition
+            if shimmerNode.bounds.isEmpty {
+                shimmerTransition = .immediate
+            } else {
+                shimmerTransition = transition
+            }
+            
+            shimmerTransition.updateFrame(node: shimmerNode, frame: videoBounds)
+            shimmerNode.updateAbsoluteRect(videoBounds, within: size)
+            shimmerNode.update(shimmeringColor: UIColor.white, shimmering: !self.videoReady, size: size, transition: transition)
+        }
         
         if let videoNode = self.groupVideoNode {
             videoNode.updateIsEnabled(true)
@@ -84,5 +133,103 @@ final class StreamVideoNode: ASDisplayNode {
         self.videoGlowMask.shadowPath = glowPath
         transition.updatePath(layer: self.videoGlowMask, path: glowPath)
         transition.updateFrame(layer: self.videoGlowMask, frame: videoBounds)
+    }
+}
+
+private final class StreamShimmeringNode: ASDisplayNode {
+    
+    private let backgroundNode: ImageNode
+    private let effectNode: ShimmerEffectForegroundNode
+    
+    private let borderNode: ASDisplayNode
+    private var borderMaskView: UIView?
+    private let borderEffectNode: ShimmerEffectForegroundNode
+    
+    private var currentShimmeringColor: UIColor?
+    private var currentShimmering: Bool?
+    private var currentSize: CGSize?
+    
+    public init(account: Account, peer: Peer) {
+        self.backgroundNode = ImageNode(enableHasImage: false, enableEmpty: false, enableAnimatedTransition: true)
+        self.backgroundNode.displaysAsynchronously = false
+        self.backgroundNode.contentMode = .scaleAspectFill
+        
+        self.effectNode = ShimmerEffectForegroundNode(size: 240.0)
+        
+        self.borderNode = ASDisplayNode()
+        self.borderEffectNode = ShimmerEffectForegroundNode(size: 320.0)
+        
+        super.init()
+        
+        self.clipsToBounds = true
+        self.cornerRadius = Constants.cornerRadius
+        
+        self.addSubnode(self.backgroundNode)
+        self.addSubnode(self.effectNode)
+        self.addSubnode(self.borderNode)
+        self.borderNode.addSubnode(self.borderEffectNode)
+        
+        self.backgroundNode.setSignal(peerAvatarCompleteImage(account: account, peer: EnginePeer(peer), size: CGSize(width: 250.0, height: 250.0), round: false, font: Font.regular(16.0), drawLetters: false, fullSize: false, blurred: true))
+    }
+    
+    public override func didLoad() {
+        super.didLoad()
+        
+        if self.effectNode.supernode != nil {
+            self.effectNode.layer.compositingFilter = "screenBlendMode"
+            self.borderEffectNode.layer.compositingFilter = "screenBlendMode"
+            
+            let borderMaskView = UIView()
+            borderMaskView.layer.borderWidth = 2.0
+            borderMaskView.layer.borderColor = UIColor.white.cgColor
+            borderMaskView.layer.cornerRadius = Constants.cornerRadius
+            self.borderMaskView = borderMaskView
+            
+            if let size = self.currentSize {
+                borderMaskView.frame = CGRect(origin: CGPoint(), size: size)
+            }
+            self.borderNode.view.mask = borderMaskView
+            
+            if #available(iOS 13.0, *) {
+                borderMaskView.layer.cornerCurve = .continuous
+            }
+        }
+        if #available(iOS 13.0, *) {
+            self.layer.cornerCurve = .continuous
+        }
+    }
+    
+    public func updateAbsoluteRect(_ rect: CGRect, within containerSize: CGSize) {
+        self.effectNode.updateAbsoluteRect(rect, within: containerSize)
+        self.borderEffectNode.updateAbsoluteRect(rect, within: containerSize)
+    }
+    
+    public func update(shimmeringColor: UIColor, shimmering: Bool, size: CGSize, transition: ContainedViewLayoutTransition) {
+        if let currentShimmeringColor = self.currentShimmeringColor, currentShimmeringColor.isEqual(shimmeringColor) && self.currentSize == size && self.currentShimmering == shimmering {
+            return
+        }
+        
+        let firstTime = self.currentShimmering == nil
+        self.currentShimmeringColor = shimmeringColor
+        self.currentShimmering = shimmering
+        self.currentSize = size
+        
+        let transition: ContainedViewLayoutTransition = firstTime ? .immediate : (transition.isAnimated ? transition : .animated(duration: 0.45, curve: .easeInOut))
+        transition.updateAlpha(node: self.effectNode, alpha: shimmering ? 1.0 : 0.0)
+        transition.updateAlpha(node: self.borderNode, alpha: shimmering ? 1.0 : 0.0)
+        
+        let bounds = CGRect(origin: CGPoint(), size: size)
+        
+        self.effectNode.update(foregroundColor: shimmeringColor.withAlphaComponent(0.3))
+        transition.updateFrame(node: self.effectNode, frame: bounds)
+        
+        self.borderEffectNode.update(foregroundColor: shimmeringColor.withAlphaComponent(0.45))
+        transition.updateFrame(node: self.borderEffectNode, frame: bounds)
+        
+        transition.updateFrame(node: self.backgroundNode, frame: bounds)
+        transition.updateFrame(node: self.borderNode, frame: bounds)
+        if let borderMaskView = self.borderMaskView {
+            transition.updateFrame(view: borderMaskView, frame: bounds)
+        }
     }
 }
