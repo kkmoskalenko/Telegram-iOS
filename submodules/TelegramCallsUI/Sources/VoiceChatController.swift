@@ -2034,8 +2034,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     strongSelf.updateTitle(transition: .immediate)
                     strongSelf.titleNode.isRecording = isRecording
                     
-                    strongSelf.streamVideoNode.updatePeer(peer)
-                    
                     if strongSelf.isScheduling && !hadPeer {
                         strongSelf.updateScheduleButtonTitle()
                     }
@@ -4279,6 +4277,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             let activeButtonAppearance: CallControllerButtonItemNode.Content.Appearance
             if let color = self.currentNormalButtonColor {
                 normalButtonAppearance = .color(.custom(color.rgb, 1.0))
+            } else if self.isLivestream {
+                normalButtonAppearance = .color(.custom(0x24306b, 1.0))
             } else {
                 normalButtonAppearance = .color(.custom(self.isFullscreen ? 0x1c1c1e : 0x2c2c2e, 1.0))
             }
@@ -4506,12 +4506,12 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             
             if self.isFullscreenStream {
                 transition.updateFrame(node: self.streamVideoNode, frame: CGRect(origin: .zero, size: layout.size))
-                self.streamVideoNode.update(size: layout.size, transition: transition)
+                self.streamVideoNode.update(size: layout.size, transition: transition, peer: self.peer)
             } else {
                 let streamVideoFrame = CGRect(x: contentLeftInset.isZero ? floorToScreenPixels((size.width - contentWidth) / 2.0) : contentLeftInset,
                                               y: listTopInset + topInset, width: contentWidth, height: streamVideoHeight).insetBy(dx: streamVideoPadding, dy: 0.0)
                 transition.updateFrame(node: self.streamVideoNode, frame: streamVideoFrame)
-                self.streamVideoNode.update(size: streamVideoFrame.size, transition: transition)
+                self.streamVideoNode.update(size: streamVideoFrame.size, transition: transition, peer: self.peer)
             }
             
             let tileGridSize = CGSize(width: max(0.0, contentLeftInset - sideInset), height: size.height - layout.intrinsicInsets.bottom - listTopInset - topInset)

@@ -58,15 +58,6 @@ final class StreamVideoNode: ASDisplayNode {
         self.disposable?.dispose()
     }
     
-    func updatePeer(_ peer: Peer) {
-        guard self.shimmeringNode == nil, !self.videoReady else { return }
-        
-        let shimmeringNode = StreamShimmeringNode(account: self.call.account, peer: peer)
-        shimmeringNode.isUserInteractionEnabled = false
-        self.addSubnode(shimmeringNode)
-        self.shimmeringNode = shimmeringNode
-    }
-    
     func updateVideo(pictureInPictureControllerDelegate: AVPictureInPictureControllerDelegate? = nil) {
         guard self.call.isStream, self.groupVideoNode == nil, let input = self.call.video(endpointId: "unified") else { return }
         
@@ -107,8 +98,15 @@ final class StreamVideoNode: ASDisplayNode {
         }
     }
     
-    func update(size: CGSize, transition: ContainedViewLayoutTransition) {
+    func update(size: CGSize, transition: ContainedViewLayoutTransition, peer: Peer?) {
         let videoBounds = CGRect(origin: .zero, size: size)
+        
+        if self.shimmeringNode == nil, !self.videoReady, let peer = peer {
+            let shimmeringNode = StreamShimmeringNode(account: self.call.account, peer: peer)
+            shimmeringNode.isUserInteractionEnabled = false
+            self.addSubnode(shimmeringNode)
+            self.shimmeringNode = shimmeringNode
+        }
         
         if let shimmerNode = self.shimmeringNode {
             let shimmerTransition: ContainedViewLayoutTransition
