@@ -820,8 +820,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         private let participantsSeparator = ","
         private let expandButtonTitle = "expand"
         
-        private var isFullscreenStream = false
-        private var initialOrientation: UIInterfaceOrientation?
         private let isPictureInPictureSupported: Bool
         private let streamVideoNode: StreamVideoNode
         
@@ -3245,47 +3243,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.updateTitle(transition: .animated(duration: 0.2, curve: .easeInOut))
         }
         
-        private func transitionToStream() {
-            guard self.isLivestream, !self.isFullscreenStream else { return }
-            
-            if let (layout, navigationHeight) = self.validLayout {
-                self.isFullscreenStream = true
-                self.streamVideoNode.tapped = transitionFromStream
-                
-                if self.streamVideoNode.isLandscape && !self.isLandscape {
-                    let orientation = UIInterfaceOrientation.landscapeRight
-                    if self.initialOrientation == nil {
-                        self.initialOrientation = orientation == .portrait ? .landscapeRight : .portrait
-                    } else if self.initialOrientation == orientation {
-                        self.initialOrientation = nil
-                    }
-                    self.context.sharedContext.applicationBindings.forceOrientation(orientation)
-                    return
-                }
-                
-                let transition = ContainedViewLayoutTransition.animated(duration: 0.3, curve: .easeInOut)
-                self.containerLayoutUpdated(layout, navigationHeight: navigationHeight, transition: transition)
-            }
-        }
-        
-        private func transitionFromStream() {
-            guard self.isLivestream, self.isFullscreenStream else { return }
-            
-            if let (layout, navigationHeight) = self.validLayout {
-                if let initialOrientation = self.initialOrientation {
-                    self.initialOrientation = nil
-                    self.context.sharedContext.applicationBindings.forceOrientation(initialOrientation)
-                    return
-                }
-                
-                self.isFullscreenStream = false
-                self.streamVideoNode.tapped = nil
-                
-                let transition = ContainedViewLayoutTransition.animated(duration: 0.3, curve: .easeInOut)
-                self.containerLayoutUpdated(layout, navigationHeight: navigationHeight, transition: transition)
-            }
-        }
-        
         @objc private func optionsPressed() {
             self.optionsButton.play()
             self.optionsButton.contextAction?(self.optionsButton.containerNode, nil)
@@ -3310,7 +3267,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         
         @objc private func expandPressed() {
             self.hapticFeedback.impact(.light)
-            self.transitionToStream()
+            self.context.sharedContext.applicationBindings.forceOrientation(.landscapeRight)
         }
         
         @objc private func leavePressed() {
@@ -3410,8 +3367,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             if case .ended = recognizer.state {
                 if self.isScheduling {
                     self.dismissScheduled()
-                } else if self.isFullscreenStream {
-                    self.transitionFromStream()
                 } else {
                     self.controller?.dismiss(closing: false)
                     self.controller?.dismissAllTooltips()
@@ -4075,6 +4030,16 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 }
             }
             
+            if self.isLandscape {
+                transition.updateFrame(node: self.streamVideoNode, frame: CGRect(origin: .zero, size: layout.size))
+                self.streamVideoNode.update(size: layout.size, transition: transition, peer: self.peer)
+            } else {
+                let streamVideoFrame = CGRect(x: contentLeftInset.isZero ? floorToScreenPixels((size.width - contentWidth) / 2.0) : contentLeftInset,
+                                              y: listTopInset + topInset, width: contentWidth, height: streamVideoHeight).insetBy(dx: streamVideoPadding, dy: 0.0)
+                transition.updateFrame(node: self.streamVideoNode, frame: streamVideoFrame)
+                self.streamVideoNode.update(size: streamVideoFrame.size, transition: transition, peer: self.peer)
+            }
+            
             let participantsFrame = CGRect(x: 0.0, y: layout.size.height - bottomPanelHeight - 93.0, width: size.width, height: 216.0)
             transition.updateFrame(node: self.participantsNode, frame: participantsFrame)
             self.participantsNode.update(size: participantsFrame.size, participants: self.currentTotalCount, groupingSeparator: self.participantsSeparator, transition: .immediate)
@@ -4408,16 +4373,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 previousIsLandscape = true
             }
             
-            if self.isLandscape && !previousIsLandscape {
-                if self.isLivestream && !self.isFullscreenStream {
-                    transitionToStream()
-                    return
-                }
-            } else if !self.isLandscape && previousIsLandscape {
-                if self.isLivestream && self.isFullscreenStream && self.initialOrientation == nil {
-                    transitionFromStream()
-                    return
-                }
+            if self.isLivestream && previousIsLandscape != self.isLandscape {
+                self.updateTopInset()
             }
             
             var shouldSwitchToExpanded = false
@@ -4428,7 +4385,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     shouldSwitchToExpanded = true
                 }
             }
-            if shouldSwitchToExpanded && !self.isFullscreenStream {
+            if shouldSwitchToExpanded && !self.isLivestream {
                 self.displayMode = .modal(isExpanded: true, isFilled: true)
                 self.updateDecorationsColors()
                 self.updateDecorationsLayout(transition: transition)
@@ -4503,16 +4460,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             
             transition.updateFrameAsPositionAndBounds(node: self.listContainer, frame: CGRect(origin: CGPoint(), size: size))
             transition.updateFrame(node: self.listNode, frame: CGRect(origin: CGPoint(x: contentLeftInset.isZero ? floorToScreenPixels((size.width - contentWidth) / 2.0) : contentLeftInset, y: listTopInset + topInset), size: listSize))
-            
-            if self.isFullscreenStream {
-                transition.updateFrame(node: self.streamVideoNode, frame: CGRect(origin: .zero, size: layout.size))
-                self.streamVideoNode.update(size: layout.size, transition: transition, peer: self.peer)
-            } else {
-                let streamVideoFrame = CGRect(x: contentLeftInset.isZero ? floorToScreenPixels((size.width - contentWidth) / 2.0) : contentLeftInset,
-                                              y: listTopInset + topInset, width: contentWidth, height: streamVideoHeight).insetBy(dx: streamVideoPadding, dy: 0.0)
-                transition.updateFrame(node: self.streamVideoNode, frame: streamVideoFrame)
-                self.streamVideoNode.update(size: streamVideoFrame.size, transition: transition, peer: self.peer)
-            }
             
             let tileGridSize = CGSize(width: max(0.0, contentLeftInset - sideInset), height: size.height - layout.intrinsicInsets.bottom - listTopInset - topInset)
             
@@ -5044,7 +4991,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         }
 
         private func dequeueTransition() {
-            guard let (layout, _) = self.validLayout, let transition = self.enqueuedTransitions.first else {
+            guard let transition = self.enqueuedTransitions.first, self.validLayout != nil else {
                 return
             }
             self.enqueuedTransitions.remove(at: 0)
@@ -5086,17 +5033,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             options.insert(.LowLatency)
             options.insert(.PreferSynchronousResourceLoading)
                  
-            var size = layout.size
-            if case .regular = layout.metrics.widthClass {
-                size.width = floor(min(size.width, size.height) * 0.5)
-            }
-            
-            let bottomPanelHeight = self.isLandscape ? layout.intrinsicInsets.bottom : bottomAreaHeight + layout.intrinsicInsets.bottom
-            let layoutTopInset: CGFloat = max(layout.statusBarHeight ?? 0.0, layout.safeInsets.top)
-            let listTopInset = layoutTopInset + topPanelHeight
-            let listSize = CGSize(width: size.width, height: layout.size.height - listTopInset - bottomPanelHeight + bottomGradientHeight)
-            
-            self.topInset = listSize.height - 46.0 - floor(56.0 * 3.5) - bottomGradientHeight
+            self.updateTopInset()
             
             if transition.animated {
                 self.animatingInsertion = true
@@ -5135,6 +5072,22 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             
             self.fullscreenListNode.transaction(deleteIndices: transition.deletions, insertIndicesAndItems: transition.insertions, updateIndicesAndItems: transition.updates, options: options, scrollToItem: nil, updateSizeAndInsets: nil, updateOpaqueState: nil, completion: { _ in
             })
+        }
+        
+        private func updateTopInset() {
+            guard let (layout, _) = self.validLayout else { return }
+            
+            var size = layout.size
+            if case .regular = layout.metrics.widthClass {
+                size.width = floor(min(size.width, size.height) * 0.5)
+            }
+            
+            let bottomPanelHeight = self.isLandscape ? layout.intrinsicInsets.bottom : bottomAreaHeight + layout.intrinsicInsets.bottom
+            let layoutTopInset: CGFloat = max(layout.statusBarHeight ?? 0.0, layout.safeInsets.top)
+            let listTopInset = layoutTopInset + topPanelHeight
+            let listSize = CGSize(width: size.width, height: layout.size.height - listTopInset - bottomPanelHeight + bottomGradientHeight)
+            
+            self.topInset = listSize.height - 46.0 - floor(56.0 * 3.5) - bottomGradientHeight
         }
         
         private func updateMembers(maybeUpdateVideo: Bool = true, force: Bool = false) {
@@ -5833,7 +5786,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             if gestureRecognizer is UILongPressGestureRecognizer {
                 return !self.isScheduling
             } else if gestureRecognizer is DirectionalPanGestureRecognizer {
-                if self.mainStageNode.animating || self.animatingMainStage || self.isFullscreenStream {
+                let isFullscreenLivestream = (self.isLivestream && self.isLandscape)
+                if self.mainStageNode.animating || self.animatingMainStage || isFullscreenLivestream {
                     return false
                 }
                 
