@@ -5684,9 +5684,9 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             
             if self.isLivestream {
                 self.streamVideoNode.updateVideo(pictureInPictureControllerDelegate: self)
-                self.streamVideoNode.onVideoReady = { [weak self] in
+                self.streamVideoNode.onVideoReadyChanged = { [weak self] ready in
                     DispatchQueue.main.async {
-                        self?.titleNode.isLivestreamActive = true
+                        self?.titleNode.isLivestreamActive = ready
                     }
                 }
             }

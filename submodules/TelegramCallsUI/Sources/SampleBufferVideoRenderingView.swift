@@ -121,6 +121,7 @@ final class SampleBufferVideoRenderingView: UIView, VideoRenderingView {
     private var didReportFirstFrame: Bool = false
     private var currentOrientation: PresentationCallVideoView.Orientation = .rotation0
     private var currentAspect: CGFloat = 1.0
+    private var lastFrameTimestamp: CFAbsoluteTime = 0.0
 
     private var disposable: Disposable?
 
@@ -162,6 +163,8 @@ final class SampleBufferVideoRenderingView: UIView, VideoRenderingView {
         if isAspectUpdated || isOrientationUpdated {
             self.onOrientationUpdated?(self.currentOrientation, self.currentAspect)
         }
+
+        self.lastFrameTimestamp = CFAbsoluteTimeGetCurrent()
 
         if !self.didReportFirstFrame {
             self.didReportFirstFrame = true
@@ -225,5 +228,9 @@ final class SampleBufferVideoRenderingView: UIView, VideoRenderingView {
 
     func updateIsEnabled(_ isEnabled: Bool) {
         self.isEnabled = isEnabled
+    }
+    
+    func getLastFrameTimestamp() -> CFAbsoluteTime {
+        return self.lastFrameTimestamp
     }
 }

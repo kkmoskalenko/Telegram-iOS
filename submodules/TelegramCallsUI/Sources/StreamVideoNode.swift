@@ -2,6 +2,7 @@ import AsyncDisplayKit
 import AvatarNode
 import AVKit
 import Display
+import Foundation
 import Postbox
 import SwiftSignalKit
 import TelegramCore
@@ -12,6 +13,7 @@ private enum Constants {
     static let glowVideoInset: CGFloat = 50.0
     static let glowRadius: CGFloat = 12.0
     static let glowOpacity: Float = 0.5
+    static let noSignalTimeout: TimeInterval = 0.5
 }
 
 final class StreamVideoNode: ASDisplayNode {
@@ -25,7 +27,7 @@ final class StreamVideoNode: ASDisplayNode {
         (groupVideoNode?.aspectRatio ?? 1.0) < 1.0
     }
     
-    var onVideoReady: (() -> Void)?
+    var onVideoReadyChanged: ((Bool) -> Void)?
     
     private var groupVideoNode: GroupVideoNode?
     private var videoGlowView: VideoRenderingView?
@@ -36,7 +38,7 @@ final class StreamVideoNode: ASDisplayNode {
         shapeLayer.fillColor = UIColor.white.cgColor
         shapeLayer.shadowColor = UIColor.white.cgColor
         shapeLayer.shadowRadius = Constants.glowRadius
-        shapeLayer.shadowOpacity = Constants.glowOpacity
+        shapeLayer.shadowOpacity = 0.0
         return shapeLayer
     }()
     
@@ -45,6 +47,7 @@ final class StreamVideoNode: ASDisplayNode {
     
     private var videoReady: Bool = false
     private var disposable: Disposable?
+    private var noSignalTimer: Foundation.Timer?
     
     init(call: PresentationGroupCallImpl) {
         self.call = call
@@ -56,6 +59,7 @@ final class StreamVideoNode: ASDisplayNode {
     
     deinit {
         self.disposable?.dispose()
+        self.noSignalTimer?.invalidate()
     }
     
     func updateVideo(pictureInPictureControllerDelegate: AVPictureInPictureControllerDelegate? = nil) {
@@ -71,20 +75,17 @@ final class StreamVideoNode: ASDisplayNode {
                 groupVideoNode.layer.cornerCurve = .continuous
             }
             self.disposable = groupVideoNode.ready.start(next: { [weak self] ready in
-                self?.videoReady = ready
-                if ready {
-                    self?.onVideoReady?()
+                self?.updateVideoReady(ready)
+            })
+            self.noSignalTimer = .scheduledTimer(withTimeInterval: Constants.noSignalTimeout, repeats: true) { [weak videoView, weak self] timer in
+                guard let renderingView = videoView else {
+                    timer.invalidate()
+                    return
                 }
                 
-                if let shimmerNode = self?.shimmeringNode, ready {
-                    DispatchQueue.main.async {
-                        self?.shimmeringNode = nil
-                        shimmerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false, completion: { [weak shimmerNode] _ in
-                            shimmerNode?.removeFromSupernode()
-                        })
-                    }
-                }
-            })
+                let timestampDelta = CFAbsoluteTimeGetCurrent() - renderingView.getLastFrameTimestamp()
+                self?.updateVideoReady(timestampDelta <= Constants.noSignalTimeout)
+            }
             
             self.groupVideoNode = groupVideoNode
             self.videoGlowView = videoGlowView
@@ -118,7 +119,7 @@ final class StreamVideoNode: ASDisplayNode {
             
             shimmerTransition.updateFrame(node: shimmerNode, frame: videoBounds)
             shimmerNode.updateAbsoluteRect(videoBounds, within: size)
-            shimmerNode.update(shimmeringColor: UIColor.white, shimmering: !self.videoReady, size: size, transition: transition)
+            shimmerNode.update(shimmeringColor: UIColor.white, shimmering: true, size: size, transition: transition)
         }
         
         if let videoNode = self.groupVideoNode {
@@ -149,6 +150,29 @@ final class StreamVideoNode: ASDisplayNode {
     
     func updateVideoViewIsEnabledForPictureInPicture() {
         self.groupVideoNode?.updateVideoViewIsEnabledForPictureInPicture()
+    }
+    
+    private func updateVideoReady(_ ready: Bool) {
+        guard self.videoReady != ready else { return }
+        
+        self.videoReady = ready
+        self.onVideoReadyChanged?(ready)
+        
+        DispatchQueue.main.async { [weak self] in
+            let duration = 0.3
+            let timingFunction = CAMediaTimingFunctionName.easeInEaseOut.rawValue
+            
+            if ready {
+                self?.shimmeringNode?.layer.animateAlpha(from: 1.0, to: 0.0, duration: duration, completion: { [weak self] _ in
+                    self?.shimmeringNode?.isHidden = true
+                })
+                self?.videoGlowMask.animate(from: NSNumber(value: Float(0.0)), to: NSNumber(value: Float(Constants.glowOpacity)), keyPath: "shadowOpacity", timingFunction: timingFunction, duration: duration, removeOnCompletion: false)
+            } else {
+                self?.shimmeringNode?.isHidden = false
+                self?.shimmeringNode?.layer.animateAlpha(from: 0.0, to: 1.0, duration: duration)
+                self?.videoGlowMask.animate(from: NSNumber(value: Float(Constants.glowOpacity)), to: NSNumber(value: Float(0.0)), keyPath: "shadowOpacity", timingFunction: timingFunction, duration: duration, removeOnCompletion: false)
+            }
+        }
     }
 }
 

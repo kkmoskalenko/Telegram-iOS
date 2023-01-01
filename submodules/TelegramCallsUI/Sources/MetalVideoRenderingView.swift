@@ -264,6 +264,7 @@ final class MetalVideoRenderingView: UIView, VideoRenderingView {
     private var didReportFirstFrame: Bool = false
     private var currentOrientation: PresentationCallVideoView.Orientation = .rotation0
     private var currentAspect: CGFloat = 1.0
+    private var lastFrameTimestamp: CFAbsoluteTime = 0.0
 
     private var disposable: Disposable?
 
@@ -322,6 +323,8 @@ final class MetalVideoRenderingView: UIView, VideoRenderingView {
         if isAspectUpdated || isOrientationUpdated {
             self.onOrientationUpdated?(self.currentOrientation, self.currentAspect)
         }
+
+        self.lastFrameTimestamp = CFAbsoluteTimeGetCurrent()
 
         if !self.didReportFirstFrame {
             self.didReportFirstFrame = true
@@ -513,6 +516,10 @@ final class MetalVideoRenderingView: UIView, VideoRenderingView {
                 self.needsRedraw = true
             }
         }
+    }
+    
+    func getLastFrameTimestamp() -> CFAbsoluteTime {
+        return self.lastFrameTimestamp
     }
 }
 

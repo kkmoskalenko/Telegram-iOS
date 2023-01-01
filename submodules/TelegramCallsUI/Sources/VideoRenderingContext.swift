@@ -14,6 +14,7 @@ protocol VideoRenderingView: UIView {
     func getAspect() -> CGFloat
     func setOnIsMirroredUpdated(_ f: @escaping (Bool) -> Void)
     func updateIsEnabled(_ isEnabled: Bool)
+    func getLastFrameTimestamp() -> CFAbsoluteTime
 }
 
 class VideoRenderingContext {
