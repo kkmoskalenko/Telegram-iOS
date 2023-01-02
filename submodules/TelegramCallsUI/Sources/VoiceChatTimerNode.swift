@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import AnimatedCountLabelNode
 import AsyncDisplayKit
 import Display
 import SwiftSignalKit
@@ -20,6 +21,7 @@ final class VoiceChatTimerNode: ASDisplayNode {
     private let subtitleNode: ImmediateTextNode
     
     private let timerNode: ImmediateTextNode
+    private let participantsNode: ImmediateAnimatedCountLabelNode
     
     private let foregroundView = UIView()
     private let foregroundGradientLayer = CAGradientLayer()
@@ -47,6 +49,8 @@ final class VoiceChatTimerNode: ASDisplayNode {
         self.subtitleNode = ImmediateTextNode()
         
         self.timerNode = ImmediateTextNode()
+        self.participantsNode = ImmediateAnimatedCountLabelNode()
+        self.participantsNode.alwaysOneDirection = true
         
         super.init()
         
@@ -69,6 +73,7 @@ final class VoiceChatTimerNode: ASDisplayNode {
         self.addSubnode(self.subtitleNode)
         
         self.maskView.addSubnode(self.timerNode)
+        self.maskView.addSubnode(self.participantsNode)
         
         updateInHierarchy = { [weak self] value in
             if let strongSelf = self {
@@ -129,24 +134,29 @@ final class VoiceChatTimerNode: ASDisplayNode {
         self.foregroundGradientLayer.frame = self.foregroundView.bounds
         self.maskView.frame = self.foregroundView.bounds
         
-        let text: String = presentationStringsFormattedNumber(participants, groupingSeparator)
-        let subtitle = "watching"
+        self.titleNode.attributedText = nil
+        self.timerNode.attributedText = nil
         
-        self.titleNode.attributedText = NSAttributedString(string: "", font: Font.with(size: 23.0, design: .round, weight: .semibold, traits: []), textColor: .white)
-        let titleSize = self.titleNode.updateLayout(size)
-        self.titleNode.frame = CGRect(x: floor((size.width - titleSize.width) / 2.0), y: 48.0, width: titleSize.width, height: titleSize.height)
+        let participantsText = presentationStringsFormattedNumber(participants, groupingSeparator)
+        let watchingText = "watching"
         
-        self.timerNode.attributedText = NSAttributedString(string: text, font: Font.with(size: 45.0, design: .round, weight: .semibold, traits: [.monospacedNumbers]), textColor: .white)
-        
-        var timerSize = self.timerNode.updateLayout(CGSize(width: size.width + 100.0, height: size.height))
-        if timerSize.width > size.width - 32.0 {
-            self.timerNode.attributedText = NSAttributedString(string: text, font: Font.with(size: 60.0, design: .round, weight: .semibold, traits: [.monospacedNumbers]), textColor: .white)
-            timerSize = self.timerNode.updateLayout(CGSize(width: size.width + 100.0, height: size.height))
+        var segments = [AnimatedCountLabelNode.Segment]()
+        for (index, char) in participantsText.enumerated() {
+            let participantsFont = Font.with(size: 45.0, design: .round, weight: .semibold, traits: [.monospacedNumbers])
+            let attributedString = NSAttributedString(string: String(char), font: participantsFont, textColor: .white)
+            
+            if let numberValue = char.wholeNumberValue {
+                segments.append(.number(numberValue, attributedString))
+            } else {
+                segments.append(.text(index, attributedString))
+            }
         }
         
-        self.timerNode.frame = CGRect(x: floor((size.width - timerSize.width) / 2.0), y: 78.0, width: timerSize.width, height: timerSize.height)
+        self.participantsNode.segments = segments
+        let participantsSize = self.participantsNode.updateLayout(size: CGSize(width: size.width + 100.0, height: size.height), animated: true)
+        self.participantsNode.frame = CGRect(x: floor((size.width - participantsSize.width) / 2.0), y: 78.0, width: participantsSize.width, height: participantsSize.height)
         
-        self.subtitleNode.attributedText = NSAttributedString(string: subtitle, font: Font.with(size: 16.0, design: .round, weight: .semibold, traits: []), textColor: .white)
+        self.subtitleNode.attributedText = NSAttributedString(string: watchingText, font: Font.with(size: 16.0, design: .round, weight: .semibold, traits: []), textColor: .white)
         let subtitleSize = self.subtitleNode.updateLayout(size)
         self.subtitleNode.frame = CGRect(x: floor((size.width - subtitleSize.width) / 2.0), y: 132.0, width: subtitleSize.width, height: subtitleSize.height)
         
