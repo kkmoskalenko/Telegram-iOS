@@ -32,6 +32,7 @@ final class StreamVideoNode: ASDisplayNode {
     private var groupVideoNode: GroupVideoNode?
     private var videoGlowView: VideoRenderingView?
     private var shimmeringNode: StreamShimmeringNode?
+    private weak var videoView: VideoRenderingView?
     
     private lazy var videoGlowMask: CAShapeLayer = {
         let shapeLayer = CAShapeLayer()
@@ -77,8 +78,8 @@ final class StreamVideoNode: ASDisplayNode {
             self.disposable = groupVideoNode.ready.start(next: { [weak self] ready in
                 self?.updateVideoReady(ready)
             })
-            self.noSignalTimer = .scheduledTimer(withTimeInterval: Constants.noSignalTimeout, repeats: true) { [weak videoView, weak self] timer in
-                guard let renderingView = videoView else {
+            self.noSignalTimer = .scheduledTimer(withTimeInterval: Constants.noSignalTimeout, repeats: true) { [weak self] timer in
+                guard let renderingView = self?.videoView else {
                     timer.invalidate()
                     return
                 }
@@ -89,6 +90,7 @@ final class StreamVideoNode: ASDisplayNode {
             
             self.groupVideoNode = groupVideoNode
             self.videoGlowView = videoGlowView
+            self.videoView = videoView
             
             self.view.insertSubview(videoGlowView, at: 0)
             if let shimmeringNode = self.shimmeringNode {
@@ -173,6 +175,15 @@ final class StreamVideoNode: ASDisplayNode {
                 self?.videoGlowMask.animate(from: NSNumber(value: Float(Constants.glowOpacity)), to: NSNumber(value: Float(0.0)), keyPath: "shadowOpacity", timingFunction: timingFunction, duration: duration, removeOnCompletion: false)
             }
         }
+    }
+    
+    func getLastFrameImage(blurred: Bool = false) -> UIImage? {
+        guard let pixelBuffer = self.videoView?.getLastFramePixelBuffer() else { return nil }
+        var image = CIImage(cvPixelBuffer: pixelBuffer)
+        if blurred {
+            image = image.applyingGaussianBlur(sigma: 25.0)
+        }
+        return UIImage(ciImage: image)
     }
 }
 

@@ -517,9 +517,13 @@ final class MetalVideoRenderingView: UIView, VideoRenderingView {
             }
         }
     }
-    
+
     func getLastFrameTimestamp() -> CFAbsoluteTime {
         return self.lastFrameTimestamp
+    }
+
+    func getLastFramePixelBuffer() -> CVPixelBuffer? {
+        return nil
     }
 }
 

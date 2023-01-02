@@ -121,7 +121,9 @@ final class SampleBufferVideoRenderingView: UIView, VideoRenderingView {
     private var didReportFirstFrame: Bool = false
     private var currentOrientation: PresentationCallVideoView.Orientation = .rotation0
     private var currentAspect: CGFloat = 1.0
+
     private var lastFrameTimestamp: CFAbsoluteTime = 0.0
+    private weak var lastFramePixelBuffer: CVPixelBuffer?
 
     private var disposable: Disposable?
 
@@ -174,6 +176,7 @@ final class SampleBufferVideoRenderingView: UIView, VideoRenderingView {
         if self.isEnabled {
             switch videoFrameData.buffer {
             case let .native(buffer):
+                self.lastFramePixelBuffer = buffer.pixelBuffer
                 if let sampleBuffer = sampleBufferFromPixelBuffer(pixelBuffer: buffer.pixelBuffer) {
                     self.sampleBufferLayer.enqueue(sampleBuffer)
                 }
@@ -194,6 +197,7 @@ final class SampleBufferVideoRenderingView: UIView, VideoRenderingView {
 
                 if let pixelBuffer = pixelBuffer {
                     if copyI420BufferToNV12Buffer(buffer: buffer, pixelBuffer: pixelBuffer) {
+                        self.lastFramePixelBuffer = pixelBuffer
                         if let sampleBuffer = sampleBufferFromPixelBuffer(pixelBuffer: pixelBuffer) {
                             self.sampleBufferLayer.enqueue(sampleBuffer)
                         }
@@ -229,8 +233,12 @@ final class SampleBufferVideoRenderingView: UIView, VideoRenderingView {
     func updateIsEnabled(_ isEnabled: Bool) {
         self.isEnabled = isEnabled
     }
-    
+
     func getLastFrameTimestamp() -> CFAbsoluteTime {
         return self.lastFrameTimestamp
+    }
+
+    func getLastFramePixelBuffer() -> CVPixelBuffer? {
+        return self.lastFramePixelBuffer
     }
 }
