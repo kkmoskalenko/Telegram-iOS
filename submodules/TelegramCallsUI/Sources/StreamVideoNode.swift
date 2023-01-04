@@ -2,11 +2,13 @@ import AsyncDisplayKit
 import AvatarNode
 import AVKit
 import Display
+import FastBlur
 import Foundation
 import Postbox
 import SwiftSignalKit
 import TelegramCore
 import TelegramVoip
+import VideoToolbox
 
 private enum Constants {
     static let cornerRadius: CGFloat = 10.0
@@ -18,16 +20,21 @@ private enum Constants {
 
 final class StreamVideoNode: ASDisplayNode {
     
-    var tapped: (() -> Void)? {
-        get { self.groupVideoNode?.tapped }
-        set { self.groupVideoNode?.tapped = newValue }
-    }
-    
-    var isLandscape: Bool {
-        (groupVideoNode?.aspectRatio ?? 1.0) < 1.0
-    }
-    
     var onVideoReadyChanged: ((Bool) -> Void)?
+    
+    var visibility: Bool = false {
+        didSet {
+            guard oldValue != self.visibility else { return }
+            
+            self.groupVideoNode?.updateIsEnabled(self.visibility)
+            self.videoGlowView?.updateIsEnabled(self.visibility)
+            self.videoRenderingContext.updateVisibility(isVisible: self.visibility)
+            
+            if !self.visibility {
+                storeLastFrameThumbnail()
+            }
+        }
+    }
     
     private var groupVideoNode: GroupVideoNode?
     private var videoGlowView: VideoRenderingView?
@@ -50,6 +57,8 @@ final class StreamVideoNode: ASDisplayNode {
     private var disposable: Disposable?
     private var noSignalTimer: Foundation.Timer?
     
+    // MARK: Initializers
+    
     init(call: PresentationGroupCallImpl) {
         self.call = call
         super.init()
@@ -62,6 +71,8 @@ final class StreamVideoNode: ASDisplayNode {
         self.disposable?.dispose()
         self.noSignalTimer?.invalidate()
     }
+    
+    // MARK: Update Methods
     
     func updateVideo(pictureInPictureControllerDelegate: AVPictureInPictureControllerDelegate? = nil) {
         guard self.call.isStream, self.groupVideoNode == nil, let input = self.call.video(endpointId: "unified") else { return }
@@ -106,6 +117,7 @@ final class StreamVideoNode: ASDisplayNode {
         
         if self.shimmeringNode == nil, !self.videoReady, let peer = peer {
             let shimmeringNode = StreamShimmeringNode(account: self.call.account, peer: peer)
+            shimmeringNode.thumbnailImage = UIImage(contentsOfFile: self.cachedThumbnailPath)
             shimmeringNode.isUserInteractionEnabled = false
             self.addSubnode(shimmeringNode)
             self.shimmeringNode = shimmeringNode
@@ -125,13 +137,11 @@ final class StreamVideoNode: ASDisplayNode {
         }
         
         if let videoNode = self.groupVideoNode {
-            videoNode.updateIsEnabled(true)
             videoNode.updateLayout(size: size, layoutMode: .fit, transition: transition)
             transition.updateFrame(node: videoNode, frame: videoBounds)
         }
         
         if let glowView = self.videoGlowView {
-            glowView.updateIsEnabled(true)
             let glowViewFrame = videoBounds.insetBy(dx: -Constants.glowVideoInset, dy: -Constants.glowVideoInset)
             transition.updateFrame(view: glowView, frame: glowViewFrame)
         }
@@ -140,18 +150,6 @@ final class StreamVideoNode: ASDisplayNode {
         self.videoGlowMask.shadowPath = glowPath
         transition.updatePath(layer: self.videoGlowMask, path: glowPath)
         transition.updateFrame(layer: self.videoGlowMask, frame: videoBounds)
-    }
-    
-    func startPictureInPicture() {
-        self.groupVideoNode?.startPictureInPicture()
-    }
-    
-    func stopPictureInPicture() {
-        self.groupVideoNode?.stopPictureInPicture()
-    }
-    
-    func updateVideoViewIsEnabledForPictureInPicture() {
-        self.groupVideoNode?.updateVideoViewIsEnabledForPictureInPicture()
     }
     
     private func updateVideoReady(_ ready: Bool) {
@@ -170,6 +168,8 @@ final class StreamVideoNode: ASDisplayNode {
                 })
                 self?.videoGlowMask.animate(from: NSNumber(value: Float(0.0)), to: NSNumber(value: Float(Constants.glowOpacity)), keyPath: "shadowOpacity", timingFunction: timingFunction, duration: duration, removeOnCompletion: false)
             } else {
+                self?.storeLastFrameThumbnail()
+                
                 self?.shimmeringNode?.isHidden = false
                 self?.shimmeringNode?.layer.animateAlpha(from: 0.0, to: 1.0, duration: duration)
                 self?.videoGlowMask.animate(from: NSNumber(value: Float(Constants.glowOpacity)), to: NSNumber(value: Float(0.0)), keyPath: "shadowOpacity", timingFunction: timingFunction, duration: duration, removeOnCompletion: false)
@@ -177,17 +177,81 @@ final class StreamVideoNode: ASDisplayNode {
         }
     }
     
-    func getLastFrameImage(blurred: Bool = false) -> UIImage? {
-        guard let pixelBuffer = self.videoView?.getLastFramePixelBuffer() else { return nil }
-        var image = CIImage(cvPixelBuffer: pixelBuffer)
-        if blurred {
-            image = image.applyingGaussianBlur(sigma: 25.0)
+    // MARK: Picture in Picture
+    
+    func startPictureInPicture() {
+        self.groupVideoNode?.startPictureInPicture()
+    }
+    
+    func stopPictureInPicture() {
+        self.groupVideoNode?.stopPictureInPicture()
+    }
+    
+    func updateVideoViewIsEnabledForPictureInPicture() {
+        self.groupVideoNode?.updateVideoViewIsEnabledForPictureInPicture()
+    }
+    
+    // MARK: Thumbnail Caching
+    
+    private var cachedThumbnailPath: String {
+        let resourceId: String
+        if let call = self.call.initialCall {
+            resourceId = "live-stream_\(call.id)_\(call.accessHash)"
+        } else {
+            resourceId = "live-stream_\(self.call.internalId)"
         }
-        return UIImage(ciImage: image)
+        let representationId = "live-stream-frame"
+        let mediaBox = self.call.account.postbox.mediaBox
+        return mediaBox.cachedRepresentationPathForId(resourceId, representationId: representationId, keepDuration: .shortLived)
+    }
+    
+    private func storeLastFrameThumbnail() {
+        guard let pixelBuffer = self.videoView?.getLastFramePixelBuffer() else { return }
+        
+        var cgImage: CGImage?
+        VTCreateCGImageFromCVPixelBuffer(pixelBuffer, options: nil, imageOut: &cgImage)
+        
+        guard var dataImage = cgImage else { return }
+        let imageSize = CGSize(width: dataImage.width, height: dataImage.height)
+        
+        let image = generateImage(imageSize, contextGenerator: { size, context -> Void in
+            let imageContextSize = size.width > 200.0 ? CGSize(width: 192.0, height: 192.0) : CGSize(width: 64.0, height: 64.0)
+            if let imageContext = DrawingContext(size: imageContextSize, scale: 1.0, clear: true) {
+                imageContext.withFlippedContext { c in
+                    c.draw(dataImage, in: CGRect(origin: .zero, size: imageContextSize))
+                    
+                    context.setBlendMode(.saturation)
+                    context.setFillColor(UIColor(rgb: 0xffffff, alpha: 1.0).cgColor)
+                    context.fill(CGRect(origin: .zero, size: size))
+                    context.setBlendMode(.copy)
+                }
+                
+                let iterationsCount = size.width > 200.0 ? 5 : 1
+                for _ in 0...iterationsCount {
+                    telegramFastBlurMore(Int32(imageContext.size.width * imageContext.scale),
+                                         Int32(imageContext.size.height * imageContext.scale),
+                                         Int32(imageContext.bytesPerRow), imageContext.bytes)
+                }
+                
+                dataImage = imageContext.generateImage()!.cgImage!
+            }
+            
+            context.draw(dataImage, in: CGRect(origin: .zero, size: imageSize))
+        })
+        
+        self.shimmeringNode?.thumbnailImage = image
+        try? image?.pngData()?.write(to: URL(fileURLWithPath: self.cachedThumbnailPath))
     }
 }
 
+// MARK: - Shimmering Node
+
 private final class StreamShimmeringNode: ASDisplayNode {
+    
+    var thumbnailImage: UIImage? {
+        get { self.backgroundNode.image }
+        set { self.backgroundNode.setSignal(.single(newValue)) }
+    }
     
     private let backgroundNode: ImageNode
     private let effectNode: ShimmerEffectForegroundNode

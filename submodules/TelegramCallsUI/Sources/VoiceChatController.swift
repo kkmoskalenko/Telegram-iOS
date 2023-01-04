@@ -4889,6 +4889,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             }
 
             self.videoRenderingContext.updateVisibility(isVisible: visible)
+            self.streamVideoNode.visibility = visible
         }
         
         func animateIn() {
