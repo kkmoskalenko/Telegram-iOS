@@ -45,6 +45,7 @@ final class StreamVideoNode: ASDisplayNode {
         let shapeLayer = CAShapeLayer()
         shapeLayer.fillColor = UIColor.white.cgColor
         shapeLayer.shadowColor = UIColor.white.cgColor
+        shapeLayer.shadowOffset = .zero
         shapeLayer.shadowRadius = Constants.glowRadius
         shapeLayer.shadowOpacity = 0.0
         return shapeLayer

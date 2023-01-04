@@ -44,7 +44,7 @@ let bottomAreaHeight: CGFloat = 206.0
 private let livestreamBottomAreaHeight: CGFloat = 166.0
 private let fullscreenBottomAreaHeight: CGFloat = 80.0
 private let bottomGradientHeight: CGFloat = 70.0
-private let streamVideoHeight: CGFloat = 201.0
+private let streamVideoHeight: CGFloat = 203.0
 private let streamVideoPadding: CGFloat = 16.0
 
 func decorationCornersImage(top: Bool, bottom: Bool, dark: Bool) -> UIImage? {
@@ -1044,6 +1044,15 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.closeButton.setContent(.image(closeButtonImage(dark: false, pipIcon: self.isPictureInPictureSupported)))
             self.panelButton = VoiceChatHeaderButton(context: self.context, wide: true)
             self.panelButton.setContent(.image(panelButtonImage(dark: false)))
+            
+            if self.isLivestream {
+                let scale: CGFloat = 30.0 / 28.0
+                let transform = CATransform3DMakeScale(scale, scale, 1.0)
+                
+                self.optionsButton.transform = CATransform3DTranslate(transform, 1.0, 1.0, 0.0)
+                self.closeButton.transform = CATransform3DTranslate(transform, -1.0, 1.0, 0.0)
+                self.panelButton.transform = CATransform3DTranslate(transform, -1.0, 1.0, 0.0)
+            }
             
             self.titleNode = VoiceChatTitleNode(theme: self.presentationData.theme)
             
@@ -4035,12 +4044,14 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 self.streamVideoNode.update(size: layout.size, transition: transition, peer: self.peer)
             } else {
                 let streamVideoFrame = CGRect(x: contentLeftInset.isZero ? floorToScreenPixels((size.width - contentWidth) / 2.0) : contentLeftInset,
-                                              y: listTopInset + topInset, width: contentWidth, height: streamVideoHeight).insetBy(dx: streamVideoPadding, dy: 0.0)
+                                              y: listTopInset + topInset - 7.0,
+                                              width: contentWidth,
+                                              height: streamVideoHeight).insetBy(dx: streamVideoPadding, dy: 0.0)
                 transition.updateFrame(node: self.streamVideoNode, frame: streamVideoFrame)
                 self.streamVideoNode.update(size: streamVideoFrame.size, transition: transition, peer: self.peer)
             }
             
-            let participantsFrame = CGRect(x: 0.0, y: layout.size.height - bottomPanelHeight - 93.0, width: size.width, height: 216.0)
+            let participantsFrame = CGRect(x: 0.0, y: self.streamVideoNode.frame.maxY - 44.0, width: size.width, height: 216.0)
             transition.updateFrame(node: self.participantsNode, frame: participantsFrame)
             self.participantsNode.update(size: participantsFrame.size, participants: self.currentTotalCount, groupingSeparator: self.participantsSeparator, transition: .immediate)
         }
@@ -4240,10 +4251,10 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             
             let normalButtonAppearance: CallControllerButtonItemNode.Content.Appearance
             let activeButtonAppearance: CallControllerButtonItemNode.Content.Appearance
-            if let color = self.currentNormalButtonColor {
+            if self.isLivestream {
+                normalButtonAppearance = .color(.custom(0x2a2c5b, 1.0))
+            } else if let color = self.currentNormalButtonColor {
                 normalButtonAppearance = .color(.custom(color.rgb, 1.0))
-            } else if self.isLivestream {
-                normalButtonAppearance = .color(.custom(0x24306b, 1.0))
             } else {
                 normalButtonAppearance = .color(.custom(self.isFullscreen ? 0x1c1c1e : 0x2c2c2e, 1.0))
             }
@@ -4333,7 +4344,9 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             
             self.expandButton.update(size: sideButtonSize, content: CallControllerButtonItemNode.Content(appearance: normalButtonAppearance, image: .expand), text: self.expandButtonTitle, transition: transition)
             
-            self.leaveButton.update(size: sideButtonSize, content: CallControllerButtonItemNode.Content(appearance: .color(.custom(0xff3b30, 0.3)), image: .cancel), text: self.presentationData.strings.VoiceChat_Leave, transition: .immediate)
+            let leaveButtonAppearance: CallControllerButtonItemNode.Content.Appearance
+            leaveButtonAppearance = self.isLivestream ? .color(.custom(0x502932, 1.0)) : .color(.custom(0xff3b30, 0.3))
+            self.leaveButton.update(size: sideButtonSize, content: CallControllerButtonItemNode.Content(appearance: leaveButtonAppearance, image: .cancel), text: self.presentationData.strings.VoiceChat_Leave, transition: .immediate)
             
             transition.updateAlpha(node: self.cameraButton.textNode, alpha: buttonsTitleAlpha)
             transition.updateAlpha(node: self.switchCameraButton.textNode, alpha: buttonsTitleAlpha)
@@ -4395,13 +4408,16 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             }
             
             let effectiveDisplayMode = self.displayMode
-
-            transition.updateFrame(node: self.titleNode, frame: CGRect(origin: CGPoint(x: floorToScreenPixels((size.width - headerWidth) / 2.0), y: 10.0), size: CGSize(width: headerWidth, height: 44.0)))
+            
+            let headerTitleOriginY: CGFloat = self.isLivestream ? 6.0 : 10.0
+            let headerButtonOriginY: CGFloat = self.isLivestream ? 13.0 : 18.0
+            
+            transition.updateFrame(node: self.titleNode, frame: CGRect(origin: CGPoint(x: floorToScreenPixels((size.width - headerWidth) / 2.0), y: headerTitleOriginY), size: CGSize(width: headerWidth, height: 44.0)))
             self.updateTitle(transition: transition)
             
-            transition.updateFrame(node: self.optionsButton, frame: CGRect(origin: CGPoint(x: 20.0 + floorToScreenPixels((size.width - headerWidth) / 2.0), y: 18.0), size: CGSize(width: 28.0, height: 28.0)))
-            transition.updateFrame(node: self.panelButton, frame: CGRect(origin: CGPoint(x: size.width - floorToScreenPixels((size.width - headerWidth) / 2.0) - 20.0 - 28.0 - 38.0 - 24.0, y: 18.0), size: CGSize(width: 38.0, height: 28.0)))
-            transition.updateFrame(node: self.closeButton, frame: CGRect(origin: CGPoint(x: size.width - floorToScreenPixels((size.width - headerWidth) / 2.0) - 20.0 - 28.0, y: 18.0), size: CGSize(width: 28.0, height: 28.0)))
+            transition.updateFrame(node: self.optionsButton, frame: CGRect(origin: CGPoint(x: 20.0 + floorToScreenPixels((size.width - headerWidth) / 2.0), y: headerButtonOriginY), size: CGSize(width: 28.0, height: 28.0)))
+            transition.updateFrame(node: self.panelButton, frame: CGRect(origin: CGPoint(x: size.width - floorToScreenPixels((size.width - headerWidth) / 2.0) - 20.0 - 28.0 - 38.0 - 24.0, y: headerButtonOriginY), size: CGSize(width: 38.0, height: 28.0)))
+            transition.updateFrame(node: self.closeButton, frame: CGRect(origin: CGPoint(x: size.width - floorToScreenPixels((size.width - headerWidth) / 2.0) - 20.0 - 28.0, y: headerButtonOriginY), size: CGSize(width: 28.0, height: 28.0)))
             
             transition.updateAlpha(node: self.optionsButton, alpha: self.optionsButton.isUserInteractionEnabled ? 1.0 : 0.0)
             transition.updateAlpha(node: self.panelButton, alpha: self.panelButton.isUserInteractionEnabled ? 1.0 : 0.0)
