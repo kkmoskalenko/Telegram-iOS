@@ -136,7 +136,7 @@ final class VoiceChatTitleNode: ASDisplayNode {
         self.infoNode.isHidden = true
         self.liveIndicatorNode.isHidden = false
         
-        let constrainedSize = CGSize(width: size.width - 140.0, height: size.height)
+        let constrainedSize = CGSize(width: size.width - 181.0, height: size.height)
         let titleSize = self.titleNode.measure(constrainedSize)
         let indicatorSize = CGSize(width: 35.0, height: 20.0)
         let indicatorOffset: CGFloat = 6.0
@@ -146,6 +146,10 @@ final class VoiceChatTitleNode: ASDisplayNode {
         
         self.titleNode.frame = titleFrame
         self.liveIndicatorNode.frame = indicatorFrame
+        
+        let iconSide = 16.0 + (1.0 + UIScreenPixel) * 2.0
+        let iconSize = CGSize(width: iconSide, height: iconSide)
+        self.recordingIconNode.frame = CGRect(origin: CGPoint(x: indicatorFrame.maxX + 1.0, y: titleFrame.minY + 1.0), size: iconSize)
     }
 }
 

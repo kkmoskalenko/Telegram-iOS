@@ -138,8 +138,6 @@ final class VoiceChatTimerNode: ASDisplayNode {
         self.timerNode.attributedText = nil
         
         let participantsText = presentationStringsFormattedNumber(participants, groupingSeparator)
-        let watchingText = "watching"
-        
         var segments = [AnimatedCountLabelNode.Segment]()
         for (index, char) in participantsText.enumerated() {
             let participantsFont = Font.with(size: 45.0, design: .round, weight: .semibold, traits: [.monospacedNumbers])
@@ -156,7 +154,7 @@ final class VoiceChatTimerNode: ASDisplayNode {
         let participantsSize = self.participantsNode.updateLayout(size: CGSize(width: size.width + 100.0, height: size.height), animated: true)
         self.participantsNode.frame = CGRect(x: floor((size.width - participantsSize.width) / 2.0), y: 78.0, width: participantsSize.width, height: participantsSize.height)
         
-        self.subtitleNode.attributedText = NSAttributedString(string: watchingText, font: Font.with(size: 16.0, design: .round, weight: .semibold, traits: []), textColor: .white)
+        self.subtitleNode.attributedText = NSAttributedString(string: self.strings.LiveStream_Watching, font: Font.with(size: 16.0, design: .round, weight: .semibold, traits: []), textColor: .white)
         let subtitleSize = self.subtitleNode.updateLayout(size)
         self.subtitleNode.frame = CGRect(x: floor((size.width - subtitleSize.width) / 2.0), y: 132.0, width: subtitleSize.width, height: subtitleSize.height)
         

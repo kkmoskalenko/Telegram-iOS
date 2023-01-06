@@ -5815,13 +5815,14 @@ Sorry for the inconvenience.";
 "VoiceChat.MutedHelp" = "You are in Listen Only mode";
 
 "VoiceChat.Audio" = "audio";
+"VoiceChat.Expand" = "expand";
 "VoiceChat.Leave" = "leave";
 
 "VoiceChat.SpeakPermissionEveryone" = "New participants can speak";
 "VoiceChat.SpeakPermissionAdmin" = "New paricipants are muted";
 "VoiceChat.Share" = "Share Invite Link";
 "VoiceChat.EndVoiceChat" = "End Voice Chat";
-"VoiceChat.EndLiveStream" = "End Live Stream";
+"VoiceChat.EndLiveStream" = "Stop Live Stream";
 
 "VoiceChat.CopyInviteLink" = "Copy Invite Link";
 "VoiceChat.InviteLinkCopiedText" = "Invite link copied to clipboard";
@@ -6953,6 +6954,7 @@ Sorry for the inconvenience.";
 "LiveStream.Listening.Members_many" = "%@ listening";
 "LiveStream.Listening.Members_any" = "%@ listening";
 
+"LiveStream.Watching" = "watching";
 "LiveStream.Watching.Members_0" = "%@ watching";
 "LiveStream.Watching.Members_1" = "%@ watching";
 "LiveStream.Watching.Members_2" = "%@ watching";

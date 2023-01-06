@@ -818,11 +818,11 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         private let titleNode: VoiceChatTitleNode
         private let participantsNode: VoiceChatTimerNode
         private let participantsSeparator = ","
-        private let expandButtonTitle = "expand"
         
         private let isPictureInPictureSupported: Bool
         private let streamVideoNode: StreamVideoNode
         private var streamIsFullscreen: Bool = false
+        private weak var contextController: ContextController?
         
         private var enqueuedTransitions: [ListTransition] = []
         private var enqueuedFullscreenTransitions: [ListTransition] = []
@@ -1833,6 +1833,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 
                 let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData.withUpdated(theme: strongSelf.darkTheme), source: .extracted(source), items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
                 contextController.useComplexItemsTransitionAnimation = true
+                strongSelf.contextController = contextController
                 strongSelf.controller?.presentInGlobalOverlay(contextController)
             }, getPeerVideo: { [weak self] endpointId, position in
                 guard let strongSelf = self else {
@@ -2015,6 +2016,10 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     } else {
                         strongSelf.optionsButton.isUserInteractionEnabled = true
                     }
+                    if let callState = strongSelf.callState, !callState.canManageCall, strongSelf.isLivestream {
+                        strongSelf.optionsButton.isUserInteractionEnabled = false
+                        strongSelf.optionsButton.alpha = 0.0
+                    }
                 }
                 
                 if let (layout, navigationHeight) = strongSelf.validLayout {
@@ -2042,6 +2047,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     
                     strongSelf.updateTitle(transition: .immediate)
                     strongSelf.titleNode.isRecording = isRecording
+                    strongSelf.streamVideoNode.fullscreenOverlayNode.isRecording = isRecording
                     
                     if strongSelf.isScheduling && !hadPeer {
                         strongSelf.updateScheduleButtonTitle()
@@ -2532,6 +2538,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             let items: Signal<[ContextMenuItem], NoError> = self.contextMenuMainItems()
             if let controller = self.controller {
                 let contextController = ContextController(account: self.context.account, presentationData: self.presentationData.withUpdated(theme: self.darkTheme), source: .reference(VoiceChatContextReferenceContentSource(controller: controller, sourceNode: self.optionsButton.referenceNode)), items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
+                self.contextController = contextController
                 controller.presentInGlobalOverlay(contextController)
             }
         }
@@ -2553,7 +2560,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
 
                 var items: [ContextMenuItem] = []
 
-                if peers.count > 1 {
+                if peers.count > 1 && !strongSelf.isLivestream {
                     for peer in peers {
                         if peer.peer.id == myPeerId {
                             items.append(.action(ContextMenuActionItem(text: strongSelf.presentationData.strings.VoiceChat_DisplayAs, textLayout: .secondLineWithValue(EnginePeer(peer.peer).displayTitle(strings: strongSelf.presentationData.strings, displayOrder: strongSelf.presentationData.nameDisplayOrder)), icon: { _ in nil }, iconSource: ContextMenuActionItemIconSource(size: avatarSize, signal: peerAvatarCompleteImage(account: strongSelf.context.account, peer: EnginePeer(peer.peer), size: avatarSize)), action: { c, _ in
@@ -2699,7 +2706,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                             let alertController = textAlertController(context: strongSelf.context, forceTheme: strongSelf.darkTheme, title: nil, text: strongSelf.presentationData.strings.VoiceChat_StopRecordingTitle, actions: [TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}), TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.VoiceChat_StopRecordingStop, action: {
                                 if let strongSelf = self {
                                     strongSelf.call.setShouldBeRecording(false, title: nil, videoOrientation: nil)
-
+                                    strongSelf.contextController?.dismiss()
                                     
                                     let text: String
                                     if let channel = strongSelf.peer as? TelegramChannel, case .broadcast = channel.info {
@@ -2729,7 +2736,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                                     })
                                 }
                             })])
-                            self?.controller?.present(alertController, in: .window(.root))
+                            self?.controller?.presentInGlobalOverlay(alertController)
                         }), false))
                     } else {
                         let text: String
@@ -4375,7 +4382,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.audioButton.update(size: audioButtonSize, content: CallControllerButtonItemNode.Content(appearance: soundAppearance, image: soundImage, isEnabled: isSoundEnabled), text: soundTitle, transition: transition)
             self.audioButton.isUserInteractionEnabled = isSoundEnabled
             
-            self.expandButton.update(size: sideButtonSize, content: CallControllerButtonItemNode.Content(appearance: normalButtonAppearance, image: .expand), text: self.expandButtonTitle, transition: transition)
+            self.expandButton.update(size: sideButtonSize, content: CallControllerButtonItemNode.Content(appearance: normalButtonAppearance, image: .expand), text: self.presentationData.strings.VoiceChat_Expand, transition: transition)
             
             let leaveButtonAppearance: CallControllerButtonItemNode.Content.Appearance
             leaveButtonAppearance = self.isLivestream ? .color(.custom(0x502932, 1.0)) : .color(.custom(0xff3b30, 0.3))

@@ -370,7 +370,12 @@ final class StreamVideoOverlayNode: ASDisplayNode {
     var onShareButtonPressed: (() -> Void)?
     var onMinimizeButtonPressed: (() -> Void)?
     
-    fileprivate var isLivestreamActive: Bool {
+    var isRecording: Bool {
+        get { self.titleNode.isRecording }
+        set { self.titleNode.isRecording = newValue }
+    }
+    
+    var isLivestreamActive: Bool {
         get { self.titleNode.isLivestreamActive }
         set { self.titleNode.isLivestreamActive = newValue }
     }
