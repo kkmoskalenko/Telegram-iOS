@@ -822,6 +822,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         
         private let isPictureInPictureSupported: Bool
         private let streamVideoNode: StreamVideoNode
+        private var streamIsFullscreen: Bool = false
         
         private var enqueuedTransitions: [ListTransition] = []
         private var enqueuedFullscreenTransitions: [ListTransition] = []
@@ -1054,7 +1055,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 self.panelButton.transform = CATransform3DTranslate(transform, -1.0, 1.0, 0.0)
             }
             
-            self.titleNode = VoiceChatTitleNode(theme: self.presentationData.theme)
+            self.titleNode = VoiceChatTitleNode()
             
             self.topCornersNode = ASImageNode()
             self.topCornersNode.displaysAsynchronously = false
@@ -1169,7 +1170,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.timerNode = VoiceChatTimerNode(strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat)
             self.timerNode.isHidden = true
             
-            self.streamVideoNode = StreamVideoNode(call: call as! PresentationGroupCallImpl)
+            self.streamVideoNode = StreamVideoNode(call: call as! PresentationGroupCallImpl, strings: self.presentationData.strings)
             self.streamVideoNode.isHidden = !self.isLivestream
             
             self.participantsNode = VoiceChatTimerNode(strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat)
@@ -1987,6 +1988,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 
                 let totalCount = Int32(max(1, callMembers?.totalCount ?? 0))
                 strongSelf.currentTotalCount = totalCount
+                strongSelf.streamVideoNode.fullscreenOverlayNode.update(participantCount: totalCount)
                 
                 let subtitle = strongSelf.presentationData.strings.VoiceChat_Panel_Members(totalCount)
                 strongSelf.currentSubtitle = subtitle
@@ -2202,6 +2204,19 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     }
                 }
             })
+            
+            self.streamVideoNode.fullscreenOverlayNode.onShareButtonPressed = { [weak self] in self?.presentShare() }
+            self.streamVideoNode.fullscreenOverlayNode.onMinimizeButtonPressed = { [weak self] in
+                self?.streamIsFullscreen = false
+                
+                if let (layout, navigationHeight) = self?.validLayout, case .regular = layout.metrics.widthClass {
+                    let transition = ContainedViewLayoutTransition.animated(duration: 0.3, curve: .easeInOut)
+                    self?.containerLayoutUpdated(layout, navigationHeight: navigationHeight, transition: transition)
+                    self?.updateDecorationsLayout(transition: transition)
+                } else {
+                    self?.context.sharedContext.applicationBindings.forceOrientation(.portrait)
+                }
+            }
             
             self.expandButton.addTarget(self, action: #selector(self.expandPressed), forControlEvents: .touchUpInside)
             self.leaveButton.addTarget(self, action: #selector(self.leavePressed), forControlEvents: .touchUpInside)
@@ -3276,7 +3291,15 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         
         @objc private func expandPressed() {
             self.hapticFeedback.impact(.light)
-            self.context.sharedContext.applicationBindings.forceOrientation(.landscapeRight)
+            self.streamIsFullscreen = true
+            
+            if let (layout, navigationHeight) = self.validLayout, case .regular = layout.metrics.widthClass {
+                let transition = ContainedViewLayoutTransition.animated(duration: 0.3, curve: .easeInOut)
+                self.containerLayoutUpdated(layout, navigationHeight: navigationHeight, transition: transition)
+                self.updateDecorationsLayout(transition: transition)
+            } else {
+                self.context.sharedContext.applicationBindings.forceOrientation(.landscapeRight)
+            }
         }
         
         @objc private func leavePressed() {
@@ -3393,6 +3416,44 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 return true
             }
             self.controller?.present(UndoOverlayController(presentationData: self.presentationData, content: content, elevatedLayout: false, animateInAsReplacement: animateInAsReplacement, action: action), in: .current)
+        }
+        
+        private func presentShare() {
+            if let callState = self.callState, let peer = self.peer, !callState.canManageCall && (peer.addressName?.isEmpty ?? true) {
+                return
+            }
+            
+            let _ = (self.inviteLinksPromise.get()
+                     |> take(1)
+                     |> deliverOnMainQueue).start(next: { [weak self] inviteLinks in
+                guard let strongSelf = self else {
+                    return
+                }
+                
+                let _ = (strongSelf.context.engine.data.get(
+                    TelegramEngine.EngineData.Item.Peer.Peer(id: strongSelf.call.peerId),
+                    TelegramEngine.EngineData.Item.Peer.ExportedInvitation(id: strongSelf.call.peerId)
+                )
+                         |> map { peer, exportedInvitation -> GroupCallInviteLinks? in
+                    if let inviteLinks = inviteLinks {
+                        return inviteLinks
+                    } else if let peer = peer, let addressName = peer.addressName, !addressName.isEmpty {
+                        return GroupCallInviteLinks(listenerLink: "https://t.me/\(addressName)?voicechat", speakerLink: nil)
+                    } else if let link = exportedInvitation?.link {
+                        return GroupCallInviteLinks(listenerLink: link, speakerLink: nil)
+                    }
+                    return nil
+                }
+                         |> deliverOnMainQueue).start(next: { links in
+                    guard let strongSelf = self else {
+                        return
+                    }
+                    
+                    if let links = links {
+                        strongSelf.presentShare(links)
+                    }
+                })
+            })
         }
         
         private func presentShare(_ inviteLinks: GroupCallInviteLinks) {
@@ -3630,41 +3691,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.hapticFeedback.impact(.light)
                         
             if self.callState?.scheduleTimestamp != nil || self.isLivestream {
-                if let callState = self.callState, let peer = self.peer, !callState.canManageCall && (peer.addressName?.isEmpty ?? true) {
-                    return
-                }
-                
-                let _ = (self.inviteLinksPromise.get()
-                |> take(1)
-                |> deliverOnMainQueue).start(next: { [weak self] inviteLinks in
-                    guard let strongSelf = self else {
-                        return
-                    }
-                    
-                    let _ = (strongSelf.context.engine.data.get(
-                        TelegramEngine.EngineData.Item.Peer.Peer(id: strongSelf.call.peerId),
-                        TelegramEngine.EngineData.Item.Peer.ExportedInvitation(id: strongSelf.call.peerId)
-                    )
-                    |> map { peer, exportedInvitation -> GroupCallInviteLinks? in
-                        if let inviteLinks = inviteLinks {
-                            return inviteLinks
-                        } else if let peer = peer, let addressName = peer.addressName, !addressName.isEmpty {
-                            return GroupCallInviteLinks(listenerLink: "https://t.me/\(addressName)?voicechat", speakerLink: nil)
-                        } else if let link = exportedInvitation?.link {
-                            return GroupCallInviteLinks(listenerLink: link, speakerLink: nil)
-                        }
-                        return nil
-                    }
-                    |> deliverOnMainQueue).start(next: { links in
-                        guard let strongSelf = self else {
-                            return
-                        }
-                        
-                        if let links = links {
-                            strongSelf.presentShare(links)
-                        }
-                    })
-                })
+                self.presentShare()
                 return
             }
             
@@ -4039,16 +4066,20 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 }
             }
             
-            if self.isLandscape {
+            if self.streamIsFullscreen {
+                var safeInsets = layout.safeInsets
+                safeInsets.top += layout.intrinsicInsets.top
+                safeInsets.bottom += layout.intrinsicInsets.bottom
+                
                 transition.updateFrame(node: self.streamVideoNode, frame: CGRect(origin: .zero, size: layout.size))
-                self.streamVideoNode.update(size: layout.size, transition: transition, peer: self.peer)
+                self.streamVideoNode.update(size: layout.size, safeInsets: safeInsets, transition: transition, isFullscreen: true, peer: self.peer)
             } else {
                 let streamVideoFrame = CGRect(x: contentLeftInset.isZero ? floorToScreenPixels((size.width - contentWidth) / 2.0) : contentLeftInset,
                                               y: listTopInset + topInset - 7.0,
                                               width: contentWidth,
                                               height: streamVideoHeight).insetBy(dx: streamVideoPadding, dy: 0.0)
                 transition.updateFrame(node: self.streamVideoNode, frame: streamVideoFrame)
-                self.streamVideoNode.update(size: streamVideoFrame.size, transition: transition, peer: self.peer)
+                self.streamVideoNode.update(size: streamVideoFrame.size, safeInsets: .zero, transition: transition, isFullscreen: false, peer: self.peer)
             }
             
             let participantsFrame = CGRect(x: 0.0, y: self.streamVideoNode.frame.maxY - 44.0, width: size.width, height: 216.0)
@@ -4212,6 +4243,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             let titleNodeSize = CGSize(width: self.titleNode.bounds.width, height: 44.0)
             if self.isLivestream {
                 self.titleNode.update(size: titleNodeSize, title: self.currentTitle)
+                self.streamVideoNode.fullscreenOverlayNode.title = self.currentTitle
             } else {
                 self.titleNode.update(size: titleNodeSize, title: title, subtitle: subtitle, speaking: speaking, slide: slide, transition: transition)
             }
@@ -4379,6 +4411,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 contentWidth = self.isLandscape ? min(530.0, size.width - 210.0) : size.width
                 headerWidth = contentWidth
                 contentLeftInset = 0.0
+                
+                self.streamIsFullscreen = self.isLandscape
             }
             
             var previousIsLandscape = false
@@ -4905,7 +4939,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             }
 
             self.videoRenderingContext.updateVisibility(isVisible: visible)
-            self.streamVideoNode.visibility = visible
+            self.streamVideoNode.visibility = self.isLivestream && visible
         }
         
         func animateIn() {
@@ -5803,8 +5837,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             if gestureRecognizer is UILongPressGestureRecognizer {
                 return !self.isScheduling
             } else if gestureRecognizer is DirectionalPanGestureRecognizer {
-                let isFullscreenLivestream = (self.isLivestream && self.isLandscape)
-                if self.mainStageNode.animating || self.animatingMainStage || isFullscreenLivestream {
+                if self.mainStageNode.animating || self.animatingMainStage || self.streamIsFullscreen {
                     return false
                 }
                 

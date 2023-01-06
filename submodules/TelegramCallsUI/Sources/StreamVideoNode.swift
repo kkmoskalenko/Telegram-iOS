@@ -7,6 +7,7 @@ import Foundation
 import Postbox
 import SwiftSignalKit
 import TelegramCore
+import TelegramPresentationData
 import TelegramVoip
 import VideoToolbox
 
@@ -16,6 +17,7 @@ private enum Constants {
     static let glowRadius: CGFloat = 12.0
     static let glowOpacity: Float = 0.5
     static let noSignalTimeout: TimeInterval = 0.5
+    static let fullscreenBarHeight: CGFloat = 44.0
 }
 
 final class StreamVideoNode: ASDisplayNode {
@@ -52,6 +54,8 @@ final class StreamVideoNode: ASDisplayNode {
     }()
     
     private let call: PresentationGroupCallImpl
+    private let strings: PresentationStrings
+    
     private let videoRenderingContext = VideoRenderingContext()
     
     private var videoReady: Bool = false
@@ -60,12 +64,16 @@ final class StreamVideoNode: ASDisplayNode {
     
     // MARK: Initializers
     
-    init(call: PresentationGroupCallImpl) {
+    init(call: PresentationGroupCallImpl, strings: PresentationStrings) {
         self.call = call
+        self.strings = strings
         super.init()
         
         self.clipsToBounds = false
         self.layer.mask = self.videoGlowMask
+        
+        self.fullscreenOverlayNode.alpha = 0.0
+        self.addSubnode(self.fullscreenOverlayNode)
     }
     
     deinit {
@@ -83,6 +91,11 @@ final class StreamVideoNode: ASDisplayNode {
            let videoGlowView = self.videoRenderingContext.makeView(input: input, blur: true) {
             let groupVideoNode = GroupVideoNode(videoView: videoView, backdropVideoView: videoBlurView)
             groupVideoNode.setupPictureInPicture(delegate: pictureInPictureControllerDelegate)
+            groupVideoNode.tapped = { [weak self] in
+                if self?.isFullscreen == true {
+                    self?.displayUI.toggle()
+                }
+            }
             groupVideoNode.cornerRadius = Constants.cornerRadius
             if #available(iOS 13.0, *) {
                 groupVideoNode.layer.cornerCurve = .continuous
@@ -108,20 +121,27 @@ final class StreamVideoNode: ASDisplayNode {
             if let shimmeringNode = self.shimmeringNode {
                 self.insertSubnode(groupVideoNode, belowSubnode: shimmeringNode)
             } else {
-                self.addSubnode(groupVideoNode)
+                self.insertSubnode(groupVideoNode, belowSubnode: self.fullscreenOverlayNode)
             }
+            
+            groupVideoNode.updateIsEnabled(self.visibility)
+            videoGlowView.updateIsEnabled(self.visibility)
         }
     }
     
-    func update(size: CGSize, transition: ContainedViewLayoutTransition, peer: Peer?) {
+    func update(size: CGSize, safeInsets: UIEdgeInsets, transition: ContainedViewLayoutTransition, isFullscreen: Bool, peer: Peer?) {
         let videoBounds = CGRect(origin: .zero, size: size)
+        self.isFullscreen = isFullscreen
         
         if self.shimmeringNode == nil, !self.videoReady, let peer = peer {
             let shimmeringNode = StreamShimmeringNode(account: self.call.account, peer: peer)
-            shimmeringNode.thumbnailImage = UIImage(contentsOfFile: self.cachedThumbnailPath)
             shimmeringNode.isUserInteractionEnabled = false
-            self.addSubnode(shimmeringNode)
+            self.insertSubnode(shimmeringNode, belowSubnode: self.fullscreenOverlayNode)
             self.shimmeringNode = shimmeringNode
+            
+            if let thumbnailImage = UIImage(contentsOfFile: self.cachedThumbnailPath) {
+                shimmeringNode.thumbnailImage = thumbnailImage
+            }
         }
         
         if let shimmerNode = self.shimmeringNode {
@@ -136,6 +156,9 @@ final class StreamVideoNode: ASDisplayNode {
             shimmerNode.updateAbsoluteRect(videoBounds, within: size)
             shimmerNode.update(shimmeringColor: UIColor.white, shimmering: true, size: size, transition: transition)
         }
+        
+        self.fullscreenOverlayNode.update(size: size, safeInsets: safeInsets, transition: transition)
+        transition.updateFrame(node: self.fullscreenOverlayNode, frame: videoBounds)
         
         if let videoNode = self.groupVideoNode {
             videoNode.updateLayout(size: size, layoutMode: .fit, transition: transition)
@@ -158,6 +181,7 @@ final class StreamVideoNode: ASDisplayNode {
         
         self.videoReady = ready
         self.onVideoReadyChanged?(ready)
+        self.fullscreenOverlayNode.isLivestreamActive = ready
         
         DispatchQueue.main.async { [weak self] in
             let duration = 0.3
@@ -242,6 +266,142 @@ final class StreamVideoNode: ASDisplayNode {
         
         self.shimmeringNode?.thumbnailImage = image
         try? image?.pngData()?.write(to: URL(fileURLWithPath: self.cachedThumbnailPath))
+    }
+    
+    // MARK: Fullscreen UI
+    
+    private(set) lazy var fullscreenOverlayNode = StreamVideoOverlayNode(strings: self.strings)
+    private var scheduledDismissUITimer: SwiftSignalKit.Timer?
+    private var isFullscreen: Bool = false {
+        didSet {
+            if !self.isFullscreen {
+                self.displayUI = false
+            }
+        }
+    }
+    private var displayUI: Bool = false {
+        didSet {
+            guard oldValue != self.displayUI else { return }
+            if self.displayUI {
+                self.scheduleDismissUI()
+            } else {
+                self.scheduledDismissUITimer = nil
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let strongSelf = self else { return }
+                let transition = ContainedViewLayoutTransition.animated(duration: 0.4, curve: .easeInOut)
+                transition.updateAlpha(node: strongSelf.fullscreenOverlayNode, alpha: strongSelf.displayUI ? 1.0 : 0.0)
+            }
+        }
+    }
+    
+    private func scheduleDismissUI() {
+        guard self.scheduledDismissUITimer == nil else { return }
+        self.scheduledDismissUITimer = SwiftSignalKit.Timer(timeout: 3.0, repeat: false, completion: { [weak self] in
+            self?.scheduledDismissUITimer = nil
+            self?.displayUI = false
+        }, queue: .mainQueue())
+        self.scheduledDismissUITimer?.start()
+    }
+}
+
+// MARK: - Fullscreen Overlay Node
+
+final class StreamVideoOverlayNode: ASDisplayNode {
+    
+    var title: String = ""
+    var onShareButtonPressed: (() -> Void)?
+    var onMinimizeButtonPressed: (() -> Void)?
+    
+    fileprivate var isLivestreamActive: Bool {
+        get { self.titleNode.isLivestreamActive }
+        set { self.titleNode.isLivestreamActive = newValue }
+    }
+    
+    private let strings: PresentationStrings
+    
+    private let navigationBar = ASDisplayNode()
+    private let toolbar = ASDisplayNode()
+    
+    private let titleNode = VoiceChatTitleNode()
+    private let participantsNode = ASTextNode()
+    private let shareButton = HighlightableButtonNode()
+    private let minimizeButton = HighlightableButtonNode()
+    
+    fileprivate init(strings: PresentationStrings) {
+        self.strings = strings
+        super.init()
+        
+        self.navigationBar.view.backgroundColor = UIColor(white: 0.0, alpha: 0.5)
+        self.toolbar.view.backgroundColor = UIColor(white: 0.0, alpha: 0.5)
+        
+        self.participantsNode.textAlignment = .center
+        self.participantsNode.verticalAlignment = .middle
+        self.participantsNode.maximumNumberOfLines = 1
+        
+        let shareImage = generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Accessory Panels/MessageSelectionForward"), color: .white)
+        self.shareButton.setImage(shareImage, for: .normal)
+        self.shareButton.addTarget(self, action: #selector(sharePressed), forControlEvents: .touchUpInside)
+        
+        let minimizeImage = generateTintedImage(image: UIImage(bundleImageName: "Media Gallery/Minimize"), color: .white)
+        self.minimizeButton.setImage(minimizeImage, for: .normal)
+        self.minimizeButton.addTarget(self, action: #selector(minimizePressed), forControlEvents: .touchUpInside)
+        
+        self.addSubnode(self.navigationBar)
+        self.addSubnode(self.toolbar)
+        
+        self.navigationBar.addSubnode(self.titleNode)
+        self.toolbar.addSubnode(self.participantsNode)
+        self.toolbar.addSubnode(self.shareButton)
+        self.toolbar.addSubnode(self.minimizeButton)
+    }
+    
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let view = super.hitTest(point, with: event)
+        return view === self.view ? nil : view
+    }
+    
+    fileprivate func update(size: CGSize, safeInsets: UIEdgeInsets, transition: ContainedViewLayoutTransition) {
+        let navigationBarSize = CGSize(width: size.width, height: safeInsets.top + Constants.fullscreenBarHeight)
+        transition.updateFrame(node: self.navigationBar, frame: CGRect(origin: .zero, size: navigationBarSize))
+        
+        let titleSize = CGSize(width: navigationBarSize.width - safeInsets.left - safeInsets.right - 8.0, height: Constants.fullscreenBarHeight)
+        let titleOrigin = CGPoint(x: (navigationBarSize.width - titleSize.width) / 2, y: navigationBarSize.height - titleSize.height)
+        self.titleNode.update(size: titleSize, title: self.title)
+        transition.updateFrame(node: self.titleNode, frame: CGRect(origin: titleOrigin, size: titleSize))
+        
+        let toolbarSize = CGSize(width: size.width, height: safeInsets.bottom + Constants.fullscreenBarHeight)
+        let toolbarFrame = CGRect(origin: CGPoint(x: 0.0, y: size.height - toolbarSize.height), size: toolbarSize)
+        transition.updateFrame(node: self.toolbar, frame: toolbarFrame)
+        
+        let textSize = self.participantsNode.updateLayout(CGSize(width: toolbarFrame.inset(by: safeInsets).width - 96.0, height: Constants.fullscreenBarHeight))
+        let textOrigin = CGPoint(x: (toolbarFrame.width - textSize.width) / 2, y: (Constants.fullscreenBarHeight - textSize.height) / 2)
+        transition.updateFrame(node: self.participantsNode, frame: CGRect(origin: textOrigin, size: textSize))
+        
+        let shareFrame = CGRect(x: toolbarFrame.minX + safeInsets.left + 4.0, y: 0.0, width: Constants.fullscreenBarHeight, height: Constants.fullscreenBarHeight)
+        transition.updateFrame(node: self.shareButton, frame: shareFrame)
+        
+        let minimizeFrame = CGRect(x: toolbarFrame.maxX - safeInsets.right - 4.0 - Constants.fullscreenBarHeight, y: 0.0, width: Constants.fullscreenBarHeight, height: Constants.fullscreenBarHeight)
+        transition.updateFrame(node: self.minimizeButton, frame: minimizeFrame)
+    }
+    
+    func update(participantCount: Int32) {
+        let participantsString: String
+        if participantCount == 0 {
+            participantsString = strings.LiveStream_NoViewers
+        } else {
+            participantsString = strings.LiveStream_ViewerCount(participantCount)
+        }
+        
+        self.participantsNode.attributedText = NSAttributedString(string: participantsString, font: .monospacedDigitSystemFont(ofSize: 17.0, weight: .regular), textColor: .white)
+    }
+    
+    @objc private func sharePressed() {
+        self.onShareButtonPressed?()
+    }
+    
+    @objc private func minimizePressed() {
+        self.onMinimizeButtonPressed?()
     }
 }
 

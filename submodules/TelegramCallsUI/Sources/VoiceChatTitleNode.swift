@@ -10,7 +10,6 @@ private let liveStreamActiveColor: UIColor = UIColor(rgb: 0xf42d53)
 private let liveStreamLoadingColor: UIColor = UIColor(rgb: 0x9c9c9c)
 
 final class VoiceChatTitleNode: ASDisplayNode {
-    private var theme: PresentationTheme
     
     private let titleNode: ASTextNode
     private let infoNode: ChatTitleActivityNode
@@ -30,9 +29,7 @@ final class VoiceChatTitleNode: ASDisplayNode {
     
     var tapped: (() -> Void)?
     
-    init(theme: PresentationTheme) {
-        self.theme = theme
-        
+    override init() {
         self.titleNode = ASTextNode()
         self.titleNode.displaysAsynchronously = false
         self.titleNode.maximumNumberOfLines = 1
