@@ -3275,6 +3275,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
         @objc private func closePressed() {
             self.controller?.dismiss(closing: false)
             self.controller?.dismissAllTooltips()
+            self.startPictureInPicture()
         }
         
         @objc private func panelPressed() {
@@ -6085,11 +6086,13 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                                 dismissing = true
                             } else if case .regular = layout.metrics.widthClass {
                                 self.controller?.dismiss(closing: false, manual: true)
+                                self.startPictureInPicture()
                                 dismissing = true
                             } else {
                                 if case .fullscreen = self.displayMode {
                                 } else {
                                     self.controller?.dismiss(closing: false, manual: true)
+                                    self.startPictureInPicture()
                                     dismissing = true
                                 }
                             }
@@ -6967,7 +6970,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             }
         }
         
-        func startPictureInPicture() {
+        private func startPictureInPicture() {
             if self.isPictureInPictureSupported {
                 self.streamVideoNode.startPictureInPicture()
             }
@@ -7131,8 +7134,6 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     }
                 }
             }
-            
-            self.controllerNode.startPictureInPicture()
         }
         
         self.dismiss()
