@@ -44,7 +44,7 @@ let bottomAreaHeight: CGFloat = 206.0
 private let livestreamBottomAreaHeight: CGFloat = 166.0
 private let fullscreenBottomAreaHeight: CGFloat = 80.0
 private let bottomGradientHeight: CGFloat = 70.0
-private let streamVideoHeight: CGFloat = 203.0
+private let streamVideoHeight: CGFloat = 201.375
 private let streamVideoPadding: CGFloat = 16.0
 
 func decorationCornersImage(top: Bool, bottom: Bool, dark: Bool) -> UIImage? {
@@ -4086,7 +4086,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 self.streamVideoNode.update(size: streamVideoFrame.size, safeInsets: .zero, transition: transition, isFullscreen: false, peer: self.peer)
             }
             
-            let participantsFrame = CGRect(x: 0.0, y: self.streamVideoNode.frame.maxY - 44.0, width: size.width, height: 216.0)
+            let participantsFrame = CGRect(x: 0.0, y: self.streamVideoNode.frame.maxY - 45.0, width: size.width, height: 216.0)
             transition.updateFrameAdditiveToCenter(node: self.participantsNode, frame: participantsFrame)
             self.participantsNode.update(size: participantsFrame.size, participants: self.currentTotalCount, groupingSeparator: self.participantsSeparator, transition: transition)
         }

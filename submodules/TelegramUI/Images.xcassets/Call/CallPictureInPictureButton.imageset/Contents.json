@@ -1,19 +1,8 @@
 {
   "images" : [
     {
-      "filename" : "pip.png",
-      "idiom" : "universal",
-      "scale" : "1x"
-    },
-    {
-      "filename" : "pip@2x.png",
-      "idiom" : "universal",
-      "scale" : "2x"
-    },
-    {
-      "filename" : "pip@3x.png",
-      "idiom" : "universal",
-      "scale" : "3x"
+      "filename" : "PiP.pdf",
+      "idiom" : "universal"
     }
   ],
   "info" : {
