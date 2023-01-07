@@ -123,7 +123,7 @@ final class SampleBufferVideoRenderingView: UIView, VideoRenderingView {
     private var currentAspect: CGFloat = 1.0
 
     private var lastFrameTimestamp: CFAbsoluteTime = 0.0
-    private weak var lastFramePixelBuffer: CVPixelBuffer?
+    private var lastFramePixelBuffer: CVPixelBuffer?
 
     private var disposable: Disposable?
 

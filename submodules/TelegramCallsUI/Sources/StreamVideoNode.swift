@@ -143,14 +143,11 @@ final class StreamVideoNode: ASDisplayNode {
         self.isFullscreen = isFullscreen
         
         if self.shimmeringNode == nil, !self.videoReady, let peer = peer {
-            let shimmeringNode = StreamShimmeringNode(account: self.call.account, peer: peer)
+            let thumbnailImage = UIImage(contentsOfFile: self.cachedThumbnailPath)
+            let shimmeringNode = StreamShimmeringNode(account: self.call.account, peer: peer, image: thumbnailImage)
             shimmeringNode.isUserInteractionEnabled = false
             self.insertSubnode(shimmeringNode, belowSubnode: self.fullscreenOverlayNode)
             self.shimmeringNode = shimmeringNode
-            
-            if let thumbnailImage = UIImage(contentsOfFile: self.cachedThumbnailPath) {
-                shimmeringNode.thumbnailImage = thumbnailImage
-            }
         }
         
         if let shimmerNode = self.shimmeringNode {
@@ -197,7 +194,7 @@ final class StreamVideoNode: ASDisplayNode {
             let timingFunction = CAMediaTimingFunctionName.easeInEaseOut.rawValue
             
             if ready {
-                self?.shimmeringNode?.layer.animateAlpha(from: 1.0, to: 0.0, duration: duration, completion: { [weak self] _ in
+                self?.shimmeringNode?.layer.animateAlpha(from: 1.0, to: 0.0, duration: duration, removeOnCompletion: false, completion: { [weak self] _ in
                     self?.shimmeringNode?.isHidden = true
                 })
                 self?.videoGlowMask.animate(from: NSNumber(value: Float(0.0)), to: NSNumber(value: Float(Constants.glowOpacity)), keyPath: "shadowOpacity", timingFunction: timingFunction, duration: duration, removeOnCompletion: false)
@@ -205,7 +202,7 @@ final class StreamVideoNode: ASDisplayNode {
                 self?.storeLastFrameThumbnail()
                 
                 self?.shimmeringNode?.isHidden = false
-                self?.shimmeringNode?.layer.animateAlpha(from: 0.0, to: 1.0, duration: duration)
+                self?.shimmeringNode?.layer.animateAlpha(from: 0.0, to: 1.0, duration: duration, removeOnCompletion: false)
                 self?.videoGlowMask.animate(from: NSNumber(value: Float(Constants.glowOpacity)), to: NSNumber(value: Float(0.0)), keyPath: "shadowOpacity", timingFunction: timingFunction, duration: duration, removeOnCompletion: false)
             }
         }
@@ -491,7 +488,7 @@ private final class StreamShimmeringNode: ASDisplayNode {
     private var currentShimmering: Bool?
     private var currentSize: CGSize?
     
-    public init(account: Account, peer: Peer) {
+    public init(account: Account, peer: Peer, image: UIImage?) {
         self.backgroundNode = ImageNode(enableHasImage: false, enableEmpty: false, enableAnimatedTransition: true)
         self.backgroundNode.displaysAsynchronously = false
         self.backgroundNode.contentMode = .scaleAspectFill
@@ -511,7 +508,11 @@ private final class StreamShimmeringNode: ASDisplayNode {
         self.addSubnode(self.borderNode)
         self.borderNode.addSubnode(self.borderEffectNode)
         
-        self.backgroundNode.setSignal(peerAvatarCompleteImage(account: account, peer: EnginePeer(peer), size: CGSize(width: 250.0, height: 250.0), round: false, font: Font.regular(16.0), drawLetters: false, fullSize: false, blurred: true))
+        if let thumbnailImage = image {
+            self.thumbnailImage = thumbnailImage
+        } else {
+            self.backgroundNode.setSignal(peerAvatarCompleteImage(account: account, peer: EnginePeer(peer), size: CGSize(width: 250.0, height: 250.0), round: false, font: Font.regular(16.0), drawLetters: false, fullSize: false, blurred: true))
+        }
     }
     
     public override func didLoad() {
