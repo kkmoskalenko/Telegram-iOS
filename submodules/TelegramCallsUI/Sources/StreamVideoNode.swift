@@ -136,6 +136,10 @@ final class StreamVideoNode: ASDisplayNode {
     
     func update(size: CGSize, safeInsets: UIEdgeInsets, transition: ContainedViewLayoutTransition, isFullscreen: Bool, peer: Peer?) {
         let videoBounds = CGRect(origin: .zero, size: size)
+        
+        if !isFullscreen {
+            self.fullscreenOverlayNode.alpha = 0.0
+        }
         self.isFullscreen = isFullscreen
         
         if self.shimmeringNode == nil, !self.videoReady, let peer = peer {

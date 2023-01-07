@@ -2215,10 +2215,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.streamVideoNode.fullscreenOverlayNode.onMinimizeButtonPressed = { [weak self] in
                 self?.streamIsFullscreen = false
                 
-                if let (layout, navigationHeight) = self?.validLayout, case .regular = layout.metrics.widthClass {
-                    let transition = ContainedViewLayoutTransition.animated(duration: 0.3, curve: .easeInOut)
-                    self?.containerLayoutUpdated(layout, navigationHeight: navigationHeight, transition: transition)
-                    self?.updateDecorationsLayout(transition: transition)
+                if let (layout, _) = self?.validLayout, case .regular = layout.metrics.widthClass {
+                    self?.updateDecorationsLayout(transition: .animated(duration: 0.4, curve: .spring))
                 } else {
                     self?.context.sharedContext.applicationBindings.forceOrientation(.portrait)
                 }
@@ -3301,10 +3299,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.hapticFeedback.impact(.light)
             self.streamIsFullscreen = true
             
-            if let (layout, navigationHeight) = self.validLayout, case .regular = layout.metrics.widthClass {
-                let transition = ContainedViewLayoutTransition.animated(duration: 0.3, curve: .easeInOut)
-                self.containerLayoutUpdated(layout, navigationHeight: navigationHeight, transition: transition)
-                self.updateDecorationsLayout(transition: transition)
+            if let (layout, _) = self.validLayout, case .regular = layout.metrics.widthClass {
+                self.updateDecorationsLayout(transition: .animated(duration: 0.4, curve: .spring))
             } else {
                 self.context.sharedContext.applicationBindings.forceOrientation(.landscapeRight)
             }
@@ -4076,7 +4072,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             
             if self.streamIsFullscreen {
                 var safeInsets = layout.safeInsets
-                safeInsets.top += layout.intrinsicInsets.top
+                safeInsets.top += layout.intrinsicInsets.top + (layout.statusBarHeight ?? .zero)
                 safeInsets.bottom += layout.intrinsicInsets.bottom
                 
                 transition.updateFrame(node: self.streamVideoNode, frame: CGRect(origin: .zero, size: layout.size))
@@ -4091,8 +4087,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             }
             
             let participantsFrame = CGRect(x: 0.0, y: self.streamVideoNode.frame.maxY - 44.0, width: size.width, height: 216.0)
-            transition.updateFrame(node: self.participantsNode, frame: participantsFrame)
-            self.participantsNode.update(size: participantsFrame.size, participants: self.currentTotalCount, groupingSeparator: self.participantsSeparator, transition: .immediate)
+            transition.updateFrameAdditiveToCenter(node: self.participantsNode, frame: participantsFrame)
+            self.participantsNode.update(size: participantsFrame.size, participants: self.currentTotalCount, groupingSeparator: self.participantsSeparator, transition: transition)
         }
         
         private var decorationsAreDark: Bool?
@@ -4440,7 +4436,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     shouldSwitchToExpanded = true
                 }
             }
-            if shouldSwitchToExpanded && !self.isLivestream {
+            if shouldSwitchToExpanded && (!self.isLivestream || layout.metrics.widthClass == .regular) {
                 self.displayMode = .modal(isExpanded: true, isFilled: true)
                 self.updateDecorationsColors()
                 self.updateDecorationsLayout(transition: transition)
