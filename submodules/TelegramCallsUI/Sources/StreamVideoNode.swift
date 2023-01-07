@@ -17,12 +17,14 @@ private enum Constants {
     static let glowRadius: CGFloat = 12.0
     static let glowOpacity: Float = 0.5
     static let noSignalTimeout: TimeInterval = 0.5
+    static let noSignalMessageTimeout: TimeInterval = 20.0
     static let fullscreenBarHeight: CGFloat = 44.0
 }
 
 final class StreamVideoNode: ASDisplayNode {
     
     var onVideoReadyChanged: ((Bool) -> Void)?
+    var canManageCall: Bool = false
     
     var visibility: Bool = false {
         didSet {
@@ -57,6 +59,16 @@ final class StreamVideoNode: ASDisplayNode {
         return shapeLayer
     }()
     
+    private lazy var noSignalTextNode: ASTextNode = {
+        let textNode = ASTextNode()
+        textNode.textAlignment = .center
+        textNode.verticalAlignment = .middle
+        textNode.maximumNumberOfLines = 0
+        textNode.alpha = 0.0
+        textNode.isUserInteractionEnabled = false
+        return textNode
+    }()
+    
     private let call: PresentationGroupCallImpl
     private let strings: PresentationStrings
     
@@ -64,7 +76,13 @@ final class StreamVideoNode: ASDisplayNode {
     
     private var videoReady: Bool = false
     private var disposable: Disposable?
+    
     private var noSignalTimer: Foundation.Timer?
+    private var noSignalDuration: TimeInterval = 0.0 {
+        didSet {
+            self.updateNoSignalMessageVisible(self.noSignalDuration >= Constants.noSignalMessageTimeout)
+        }
+    }
     
     // MARK: Initializers
     
@@ -78,6 +96,8 @@ final class StreamVideoNode: ASDisplayNode {
         
         self.fullscreenOverlayNode.alpha = 0.0
         self.addSubnode(self.fullscreenOverlayNode)
+        
+        self.insertSubnode(self.noSignalTextNode, aboveSubnode: fullscreenOverlayNode)
     }
     
     deinit {
@@ -113,7 +133,14 @@ final class StreamVideoNode: ASDisplayNode {
                 }
                 
                 let timestampDelta = CFAbsoluteTimeGetCurrent() - renderingView.getLastFrameTimestamp()
-                self?.updateVideoReady(timestampDelta <= Constants.noSignalTimeout)
+                let videoReady = timestampDelta <= Constants.noSignalTimeout
+                self?.updateVideoReady(videoReady)
+                
+                if videoReady {
+                    self?.noSignalDuration = 0.0
+                } else {
+                    self?.noSignalDuration += Constants.noSignalTimeout
+                }
             }
             
             self.groupVideoNode = groupVideoNode
@@ -166,6 +193,12 @@ final class StreamVideoNode: ASDisplayNode {
         self.fullscreenOverlayNode.update(size: size, safeInsets: safeInsets, transition: transition)
         transition.updateFrame(node: self.fullscreenOverlayNode, frame: videoBounds)
         
+        let noSignalText = NSAttributedString(string: self.canManageCall ? self.strings.LiveStream_NoSignalAdminText : self.strings.LiveStream_NoSignalUserText(self.fullscreenOverlayNode.title).string, font: .systemFont(ofSize: 16.0), textColor: .white)
+        self.noSignalTextNode.attributedText = noSignalText
+        let noSignalTextSize = self.noSignalTextNode.updateLayout(videoBounds.insetBy(dx: 12.0, dy: 12.0).size)
+        let noSignalTextOrigin = CGPoint(x: (size.width - noSignalTextSize.width) / 2, y: (size.height - noSignalTextSize.height) / 2)
+        transition.updateFrameAdditiveToCenter(node: self.noSignalTextNode, frame: CGRect(origin: noSignalTextOrigin, size: noSignalTextSize))
+        
         if let videoNode = self.groupVideoNode {
             videoNode.updateLayout(size: size, layoutMode: .fit, transition: transition)
             transition.updateFrame(node: videoNode, frame: videoBounds)
@@ -205,6 +238,14 @@ final class StreamVideoNode: ASDisplayNode {
                 self?.shimmeringNode?.layer.animateAlpha(from: 0.0, to: 1.0, duration: duration, removeOnCompletion: false)
                 self?.videoGlowMask.animate(from: NSNumber(value: Float(Constants.glowOpacity)), to: NSNumber(value: Float(0.0)), keyPath: "shadowOpacity", timingFunction: timingFunction, duration: duration, removeOnCompletion: false)
             }
+        }
+    }
+    
+    private func updateNoSignalMessageVisible(_ visible: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            guard let noSignalTextNode = self?.noSignalTextNode else { return }
+            let transition = ContainedViewLayoutTransition.animated(duration: 0.3, curve: .easeInOut)
+            transition.updateAlpha(node: noSignalTextNode, alpha: visible ? 1.0 : 0.0)
         }
     }
     

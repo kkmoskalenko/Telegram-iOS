@@ -1974,6 +1974,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     }
                     strongSelf.callState = state
                     strongSelf.mainStageNode.callState = state
+                    strongSelf.streamVideoNode.canManageCall = state.canManageCall
                     
                     if let muteState = state.muteState, !muteState.canUnmute {
                         if strongSelf.pushingToTalk {
