@@ -1,3 +1,4 @@
+import AnimatedCountLabelNode
 import AsyncDisplayKit
 import AvatarNode
 import AVKit
@@ -428,7 +429,7 @@ final class StreamVideoOverlayNode: ASDisplayNode {
     private let toolbar = ASDisplayNode()
     
     private let titleNode = VoiceChatTitleNode()
-    private let participantsNode = ASTextNode()
+    private let participantsNode = ImmediateAnimatedCountLabelNode()
     private let shareButton = HighlightableButtonNode()
     private let minimizeButton = HighlightableButtonNode()
     
@@ -438,10 +439,6 @@ final class StreamVideoOverlayNode: ASDisplayNode {
         
         self.navigationBar.view.backgroundColor = UIColor(white: 0.0, alpha: 0.5)
         self.toolbar.view.backgroundColor = UIColor(white: 0.0, alpha: 0.5)
-        
-        self.participantsNode.textAlignment = .center
-        self.participantsNode.verticalAlignment = .middle
-        self.participantsNode.maximumNumberOfLines = 1
         
         let shareImage = generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Accessory Panels/MessageSelectionForward"), color: .white)
         self.shareButton.setImage(shareImage, for: .normal)
@@ -478,7 +475,7 @@ final class StreamVideoOverlayNode: ASDisplayNode {
         let toolbarFrame = CGRect(origin: CGPoint(x: 0.0, y: size.height - toolbarSize.height), size: toolbarSize)
         transition.updateFrame(node: self.toolbar, frame: toolbarFrame)
         
-        let textSize = self.participantsNode.updateLayout(CGSize(width: toolbarFrame.inset(by: safeInsets).width - 96.0, height: Constants.fullscreenBarHeight))
+        let textSize = self.participantsNode.updateLayout(size: CGSize(width: toolbarFrame.inset(by: safeInsets).width - 96.0, height: Constants.fullscreenBarHeight), animated: true)
         let textOrigin = CGPoint(x: (toolbarFrame.width - textSize.width) / 2, y: (Constants.fullscreenBarHeight - textSize.height) / 2)
         transition.updateFrame(node: self.participantsNode, frame: CGRect(origin: textOrigin, size: textSize))
         
@@ -490,14 +487,32 @@ final class StreamVideoOverlayNode: ASDisplayNode {
     }
     
     func update(participantCount: Int32) {
-        let participantsString: String
-        if participantCount == 0 {
-            participantsString = strings.LiveStream_NoViewers
-        } else {
-            participantsString = strings.LiveStream_ViewerCount(participantCount)
+        let participantsString = participantCount == 0 ? self.strings.LiveStream_NoViewers : self.strings.LiveStream_ViewerCount(participantCount)
+        let makeAttributedString = { (string: String) in NSAttributedString(string: string, font: .systemFont(ofSize: 17.0), textColor: .white) }
+        
+        var segments = [AnimatedCountLabelNode.Segment]()
+        var accumulatedString = ""
+        var index = 0
+        
+        for char in participantsString {
+            if let value = char.wholeNumberValue {
+                if !accumulatedString.isEmpty {
+                    segments.append(.text(index, makeAttributedString(accumulatedString)))
+                    accumulatedString = ""
+                    index += 1
+                }
+                
+                segments.append(.number(value, makeAttributedString(String(char))))
+            } else {
+                accumulatedString.append(char)
+            }
         }
         
-        self.participantsNode.attributedText = NSAttributedString(string: participantsString, font: .monospacedDigitSystemFont(ofSize: 17.0, weight: .regular), textColor: .white)
+        if !accumulatedString.isEmpty {
+            segments.append(.text(index, makeAttributedString(accumulatedString)))
+        }
+        
+        self.participantsNode.segments = segments
     }
     
     @objc private func sharePressed() {
