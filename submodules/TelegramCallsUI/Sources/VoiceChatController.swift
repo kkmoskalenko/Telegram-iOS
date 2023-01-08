@@ -33,6 +33,7 @@ import MapResourceToAvatarSizes
 import SolidRoundedButtonNode
 import AudioBlob
 import DeviceAccess
+import CreateExternalMediaStreamScreen
 
 let panelBackgroundColor = UIColor(rgb: 0x1c1c1e)
 let secondaryPanelBackgroundColor = UIColor(rgb: 0x2c2c2e)
@@ -1974,7 +1975,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                     }
                     strongSelf.callState = state
                     strongSelf.mainStageNode.callState = state
-                    strongSelf.streamVideoNode.canManageCall = state.canManageCall
+                    strongSelf.streamVideoNode.fullscreenOverlayNode.canManageCall = state.canManageCall
                     
                     if let muteState = state.muteState, !muteState.canUnmute {
                         if strongSelf.pushingToTalk {
@@ -2229,12 +2230,18 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.audioButton.addTarget(self, action: #selector(self.audioPressed), forControlEvents: .touchUpInside)
             self.cameraButton.addTarget(self, action: #selector(self.cameraPressed), forControlEvents: .touchUpInside)
             self.switchCameraButton.addTarget(self, action: #selector(self.switchCameraPressed), forControlEvents: .touchUpInside)
-            self.optionsButton.contextAction = { [weak self] sourceNode, gesture in
-                self?.openSettingsMenu(sourceNode: sourceNode, gesture: gesture)
-            }
             self.optionsButton.addTarget(self, action: #selector(self.optionsPressed), forControlEvents: .touchUpInside)
             self.closeButton.addTarget(self, action: #selector(self.closePressed), forControlEvents: .touchUpInside)
             self.panelButton.addTarget(self, action: #selector(self.panelPressed), forControlEvents: .touchUpInside)
+            
+            self.optionsButton.contextAction = { [weak self] _, gesture in
+                if let referenceNode = self?.optionsButton.referenceNode {
+                    self?.openSettingsMenu(sourceNode: referenceNode, gesture: gesture)
+                }
+            }
+            self.streamVideoNode.fullscreenOverlayNode.optionsButtonContextAction = { [weak self] sourceNode, gesture in
+                self?.openSettingsMenu(sourceNode: sourceNode, gesture: gesture)
+            }
             
             self.actionButtonColorDisposable = (self.actionButton.outerColor
             |> deliverOnMainQueue).start(next: { [weak self] normalColor, activeColor in
@@ -2533,10 +2540,10 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             self.statsDisposable?.dispose()
         }
         
-        private func openSettingsMenu(sourceNode: ASDisplayNode, gesture: ContextGesture?) {
+        private func openSettingsMenu(sourceNode: ContextReferenceContentNode, gesture: ContextGesture?) {
             let items: Signal<[ContextMenuItem], NoError> = self.contextMenuMainItems()
             if let controller = self.controller {
-                let contextController = ContextController(account: self.context.account, presentationData: self.presentationData.withUpdated(theme: self.darkTheme), source: .reference(VoiceChatContextReferenceContentSource(controller: controller, sourceNode: self.optionsButton.referenceNode)), items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
+                let contextController = ContextController(account: self.context.account, presentationData: self.presentationData.withUpdated(theme: self.darkTheme), source: .reference(VoiceChatContextReferenceContentSource(controller: controller, sourceNode: sourceNode)), items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
                 self.contextController = contextController
                 controller.presentInGlobalOverlay(contextController)
             }
@@ -2628,6 +2635,8 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                         } else if chatPeer.flags.contains(.isGigagroup) {
                             hasPermissions = false
                         }
+                    } else if strongSelf.isLivestream {
+                        hasPermissions = false
                     }
                     if hasPermissions {
                         items.append(.action(ContextMenuActionItem(text: strongSelf.presentationData.strings.VoiceChat_EditPermissions, icon: { theme -> UIImage? in
@@ -2802,6 +2811,23 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                             })))
                         }
                     }
+                }
+                
+                if strongSelf.isLivestream && canManageCall {
+                    let credentialsPromise = Promise<GroupCallStreamCredentials>()
+                    credentialsPromise.set(strongSelf.call.accountContext.engine.calls.getGroupCallStreamCredentials(peerId: strongSelf.call.peerId, revokePreviousCredentials: false) |> `catch` { _ -> Signal<GroupCallStreamCredentials, NoError> in return .never() })
+                    
+                    items.append(.action(ContextMenuActionItem(id: nil, text: strongSelf.presentationData.strings.LiveStream_ViewCredentials, textColor: .primary, textLayout: .singleLine, textFont: .regular, badge: nil, icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Info"), color: theme.contextMenu.primaryColor, backgroundColor: nil)
+                    }, action: { [weak self] _, a in
+                        guard let call = self?.call, let controller = self?.controller else {
+                            return
+                        }
+                        
+                        controller.push(CreateExternalMediaStreamScreen(context: call.accountContext, peerId: call.peerId, credentialsPromise: credentialsPromise, mode: .view))
+                        
+                        a(.default)
+                    })))
                 }
 
                 if canManageCall {

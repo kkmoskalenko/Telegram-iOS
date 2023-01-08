@@ -1,3 +1,4 @@
+import AccountContext
 import AnimatedCountLabelNode
 import AsyncDisplayKit
 import AvatarNode
@@ -25,7 +26,6 @@ private enum Constants {
 final class StreamVideoNode: ASDisplayNode {
     
     var onVideoReadyChanged: ((Bool) -> Void)?
-    var canManageCall: Bool = false
     
     var visibility: Bool = false {
         didSet {
@@ -194,7 +194,7 @@ final class StreamVideoNode: ASDisplayNode {
         self.fullscreenOverlayNode.update(size: size, safeInsets: safeInsets, transition: transition)
         transition.updateFrame(node: self.fullscreenOverlayNode, frame: videoBounds)
         
-        let noSignalText = NSAttributedString(string: self.canManageCall ? self.strings.LiveStream_NoSignalAdminText : self.strings.LiveStream_NoSignalUserText(self.fullscreenOverlayNode.title).string, font: .systemFont(ofSize: 16.0), textColor: .white)
+        let noSignalText = NSAttributedString(string: self.fullscreenOverlayNode.canManageCall ? self.strings.LiveStream_NoSignalAdminText : self.strings.LiveStream_NoSignalUserText(self.fullscreenOverlayNode.title).string, font: .systemFont(ofSize: 16.0), textColor: .white)
         self.noSignalTextNode.attributedText = noSignalText
         let noSignalTextSize = self.noSignalTextNode.updateLayout(videoBounds.insetBy(dx: 12.0, dy: 12.0).size)
         let noSignalTextOrigin = CGPoint(x: (size.width - noSignalTextSize.width) / 2, y: (size.height - noSignalTextSize.height) / 2)
@@ -370,7 +370,7 @@ final class StreamVideoNode: ASDisplayNode {
     
     // MARK: Fullscreen UI
     
-    private(set) lazy var fullscreenOverlayNode = StreamVideoOverlayNode(strings: self.strings)
+    private(set) lazy var fullscreenOverlayNode = StreamVideoOverlayNode(strings: self.strings, context: self.call.accountContext)
     private var scheduledDismissUITimer: SwiftSignalKit.Timer?
     private var isFullscreen: Bool = false {
         didSet {
@@ -410,8 +410,15 @@ final class StreamVideoNode: ASDisplayNode {
 final class StreamVideoOverlayNode: ASDisplayNode {
     
     var title: String = ""
+    var canManageCall: Bool = false {
+        didSet {
+            self.optionsButton.isHidden = !self.canManageCall
+        }
+    }
+    
     var onShareButtonPressed: (() -> Void)?
     var onMinimizeButtonPressed: (() -> Void)?
+    var optionsButtonContextAction: ((ContextReferenceContentNode, ContextGesture?) -> Void)?
     
     var isRecording: Bool {
         get { self.titleNode.isRecording }
@@ -429,29 +436,42 @@ final class StreamVideoOverlayNode: ASDisplayNode {
     private let toolbar = ASDisplayNode()
     
     private let titleNode = VoiceChatTitleNode()
+    private let optionsButton: VoiceChatHeaderButton
     private let participantsNode = ImmediateAnimatedCountLabelNode()
     private let shareButton = HighlightableButtonNode()
     private let minimizeButton = HighlightableButtonNode()
     
-    fileprivate init(strings: PresentationStrings) {
+    fileprivate init(strings: PresentationStrings, context: AccountContext) {
         self.strings = strings
+        self.optionsButton = VoiceChatHeaderButton(context: context)
         super.init()
         
         self.navigationBar.view.backgroundColor = UIColor(white: 0.0, alpha: 0.5)
         self.toolbar.view.backgroundColor = UIColor(white: 0.0, alpha: 0.5)
         
+        self.optionsButton.isHidden = true
+        self.optionsButton.setContent(.more(optionsOutlinedImage()))
+        self.optionsButton.addTarget(self, action: #selector(self.optionsPressed), forControlEvents: .touchUpInside)
+        self.optionsButton.contextAction = { [weak self] _, gesture in
+            if let referenceNode = self?.optionsButton.referenceNode {
+                self?.optionsButtonContextAction?(referenceNode, gesture)
+            }
+        }
+        
         let shareImage = generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Accessory Panels/MessageSelectionForward"), color: .white)
         self.shareButton.setImage(shareImage, for: .normal)
-        self.shareButton.addTarget(self, action: #selector(sharePressed), forControlEvents: .touchUpInside)
+        self.shareButton.addTarget(self, action: #selector(self.sharePressed), forControlEvents: .touchUpInside)
         
         let minimizeImage = generateTintedImage(image: UIImage(bundleImageName: "Media Gallery/Minimize"), color: .white)
         self.minimizeButton.setImage(minimizeImage, for: .normal)
-        self.minimizeButton.addTarget(self, action: #selector(minimizePressed), forControlEvents: .touchUpInside)
+        self.minimizeButton.addTarget(self, action: #selector(self.minimizePressed), forControlEvents: .touchUpInside)
         
         self.addSubnode(self.navigationBar)
         self.addSubnode(self.toolbar)
         
         self.navigationBar.addSubnode(self.titleNode)
+        self.navigationBar.addSubnode(self.optionsButton)
+        
         self.toolbar.addSubnode(self.participantsNode)
         self.toolbar.addSubnode(self.shareButton)
         self.toolbar.addSubnode(self.minimizeButton)
@@ -470,6 +490,10 @@ final class StreamVideoOverlayNode: ASDisplayNode {
         let titleOrigin = CGPoint(x: (navigationBarSize.width - titleSize.width) / 2, y: navigationBarSize.height - titleSize.height)
         self.titleNode.update(size: titleSize, title: self.title)
         transition.updateFrame(node: self.titleNode, frame: CGRect(origin: titleOrigin, size: titleSize))
+        
+        let optionsButtonSize = CGSize(width: 28.0, height: 28.0)
+        let optionsButtonOrigin = CGPoint(x: navigationBarSize.width - safeInsets.right - 4.0 - optionsButtonSize.width - (Constants.fullscreenBarHeight - optionsButtonSize.width) / 2, y: safeInsets.top + (Constants.fullscreenBarHeight - optionsButtonSize.height) / 2)
+        transition.updateFrame(node: self.optionsButton, frame: CGRect(origin: optionsButtonOrigin, size: optionsButtonSize))
         
         let toolbarSize = CGSize(width: size.width, height: safeInsets.bottom + Constants.fullscreenBarHeight)
         let toolbarFrame = CGRect(origin: CGPoint(x: 0.0, y: size.height - toolbarSize.height), size: toolbarSize)
@@ -521,6 +545,11 @@ final class StreamVideoOverlayNode: ASDisplayNode {
     
     @objc private func minimizePressed() {
         self.onMinimizeButtonPressed?()
+    }
+    
+    @objc private func optionsPressed() {
+        self.optionsButton.play()
+        self.optionsButton.contextAction?(self.optionsButton.containerNode, nil)
     }
 }
 

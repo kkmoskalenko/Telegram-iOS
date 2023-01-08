@@ -27,6 +27,16 @@ func optionsCircleImage(dark: Bool) -> UIImage? {
     })
 }
 
+func optionsOutlinedImage() -> UIImage? {    
+    return generateImage(CGSize(width: 28.0, height: 28.0), contextGenerator: { size, context in
+        context.clear(CGRect(origin: CGPoint(), size: size))
+        
+        context.setLineWidth(1.5)
+        context.setStrokeColor(UIColor.white.cgColor)
+        context.strokeEllipse(in: CGRect(origin: .zero, size: size).insetBy(dx: 3.0, dy: 3.0))
+    })
+}
+
 func panelButtonImage(dark: Bool) -> UIImage? {
     return generateImage(CGSize(width: 38.0, height: 28.0), contextGenerator: { size, context in
         context.clear(CGRect(origin: CGPoint(), size: size))
