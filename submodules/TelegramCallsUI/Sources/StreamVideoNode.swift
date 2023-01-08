@@ -23,7 +23,7 @@ private enum Constants {
     static let fullscreenBarHeight: CGFloat = 44.0
 }
 
-final class StreamVideoNode: ASDisplayNode {
+final class StreamVideoNode: ASDisplayNode, UIGestureRecognizerDelegate {
     
     var onVideoReadyChanged: ((Bool) -> Void)?
     
@@ -99,6 +99,22 @@ final class StreamVideoNode: ASDisplayNode {
         self.addSubnode(self.fullscreenOverlayNode)
         
         self.insertSubnode(self.noSignalTextNode, aboveSubnode: fullscreenOverlayNode)
+        
+        let gestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.tapGesture(_:)))
+        gestureRecognizer.delegate = self
+        self.view.addGestureRecognizer(gestureRecognizer)
+        
+        self.noSignalTimer = .scheduledTimer(withTimeInterval: Constants.noSignalTimeout, repeats: true) { [weak self] timer in
+            let timestampDelta = CFAbsoluteTimeGetCurrent() - (self?.videoView?.getLastFrameTimestamp() ?? 0.0)
+            let videoReady = timestampDelta <= Constants.noSignalTimeout
+            self?.updateVideoReady(videoReady)
+            
+            if videoReady {
+                self?.noSignalDuration = 0.0
+            } else {
+                self?.noSignalDuration += Constants.noSignalTimeout
+            }
+        }
     }
     
     deinit {
@@ -115,11 +131,7 @@ final class StreamVideoNode: ASDisplayNode {
            let videoBlurView = self.videoRenderingContext.makeView(input: input, blur: true),
            let videoGlowView = self.videoRenderingContext.makeView(input: input, blur: true) {
             let groupVideoNode = GroupVideoNode(videoView: videoView, backdropVideoView: videoBlurView)
-            groupVideoNode.tapped = { [weak self] in
-                if self?.isFullscreen == true {
-                    self?.displayUI.toggle()
-                }
-            }
+            groupVideoNode.isUserInteractionEnabled = false
             groupVideoNode.cornerRadius = Constants.cornerRadius
             if #available(iOS 13.0, *) {
                 groupVideoNode.layer.cornerCurve = .continuous
@@ -127,22 +139,6 @@ final class StreamVideoNode: ASDisplayNode {
             self.disposable = groupVideoNode.ready.start(next: { [weak self] ready in
                 self?.updateVideoReady(ready)
             })
-            self.noSignalTimer = .scheduledTimer(withTimeInterval: Constants.noSignalTimeout, repeats: true) { [weak self] timer in
-                guard let renderingView = self?.videoView else {
-                    timer.invalidate()
-                    return
-                }
-                
-                let timestampDelta = CFAbsoluteTimeGetCurrent() - renderingView.getLastFrameTimestamp()
-                let videoReady = timestampDelta <= Constants.noSignalTimeout
-                self?.updateVideoReady(videoReady)
-                
-                if videoReady {
-                    self?.noSignalDuration = 0.0
-                } else {
-                    self?.noSignalDuration += Constants.noSignalTimeout
-                }
-            }
             
             self.groupVideoNode = groupVideoNode
             self.videoGlowView = videoGlowView
@@ -150,7 +146,9 @@ final class StreamVideoNode: ASDisplayNode {
             
             self.setupPictureInPicture(delegate: pictureInPictureControllerDelegate)
             
+            videoGlowView.isUserInteractionEnabled = false
             self.view.insertSubview(videoGlowView, at: 0)
+            
             if let shimmeringNode = self.shimmeringNode {
                 self.insertSubnode(groupVideoNode, belowSubnode: shimmeringNode)
             } else {
@@ -249,6 +247,20 @@ final class StreamVideoNode: ASDisplayNode {
             guard let noSignalTextNode = self?.noSignalTextNode else { return }
             let transition = ContainedViewLayoutTransition.animated(duration: 0.3, curve: .easeInOut)
             transition.updateAlpha(node: noSignalTextNode, alpha: visible ? 1.0 : 0.0)
+        }
+    }
+    
+    // MARK: Gesture Recognizer
+    
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        touch.view === self.view
+    }
+    
+    @objc private func tapGesture(_ recognizer: UITapGestureRecognizer) {
+        guard recognizer.state == .ended else { return }
+        
+        if self.isFullscreen {
+            self.displayUI.toggle()
         }
     }
     
