@@ -1495,6 +1495,31 @@ public extension ContainedViewLayoutTransition {
             })
         }
     }
+    
+    func updateShadowPath(layer: CAShapeLayer, path: CGPath, delay: Double = 0.0, completion: ((Bool) -> Void)? = nil) {
+        if layer.shadowPath == path {
+            completion?(true)
+            return
+        }
+        
+        switch self {
+        case .immediate:
+            layer.removeAnimation(forKey: "shadowPath")
+            layer.shadowPath = path
+            if let completion = completion {
+                completion(true)
+            }
+        case let .animated(duration, curve):
+            let fromPath = layer.shadowPath
+            layer.shadowPath = path
+            layer.animate(from: fromPath, to: path, keyPath: "shadowPath", timingFunction: curve.timingFunction, duration: duration, delay: delay, mediaTimingFunction: curve.mediaTimingFunction, removeOnCompletion: true, additive: false, completion: {
+                result in
+                if let completion = completion {
+                    completion(result)
+                }
+            })
+        }
+    }
 }
 
 public struct CombinedTransition {

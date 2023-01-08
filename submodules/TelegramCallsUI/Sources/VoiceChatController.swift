@@ -4105,10 +4105,18 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
                 transition.updateFrame(node: self.streamVideoNode, frame: CGRect(origin: .zero, size: layout.size))
                 self.streamVideoNode.update(size: layout.size, safeInsets: safeInsets, transition: transition, isFullscreen: true, peer: self.peer)
             } else {
-                let streamVideoFrame = CGRect(x: contentLeftInset.isZero ? floorToScreenPixels((size.width - contentWidth) / 2.0) : contentLeftInset,
+                let streamVideoFrame: CGRect
+                if isTablet {
+                    let videoTopEdgeY = listTopInset + topInset - 7.0
+                    let videoBottomEdgeY = layout.size.height - self.effectiveBottomAreaHeight - layout.intrinsicInsets.bottom - 100.0
+                    streamVideoFrame = CGRect(x: streamVideoPadding, y: videoTopEdgeY, width: size.width - 2.0 * streamVideoPadding, height: videoBottomEdgeY - videoTopEdgeY)
+                } else {
+                    streamVideoFrame = CGRect(x: contentLeftInset.isZero ? floorToScreenPixels((size.width - contentWidth) / 2.0) : contentLeftInset,
                                               y: listTopInset + topInset - 7.0,
                                               width: contentWidth,
                                               height: streamVideoHeight).insetBy(dx: streamVideoPadding, dy: 0.0)
+                }
+                
                 transition.updateFrame(node: self.streamVideoNode, frame: streamVideoFrame)
                 self.streamVideoNode.update(size: streamVideoFrame.size, safeInsets: .zero, transition: transition, isFullscreen: false, peer: self.peer)
             }

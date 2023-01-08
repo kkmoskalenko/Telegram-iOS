@@ -207,13 +207,15 @@ final class StreamVideoNode: ASDisplayNode {
         
         if let glowView = self.videoGlowView {
             let glowViewFrame = videoBounds.insetBy(dx: -Constants.glowVideoInset, dy: -Constants.glowVideoInset)
-            transition.updateFrame(view: glowView, frame: glowViewFrame)
+            transition.updatePosition(layer: glowView.layer, position: glowViewFrame.center)
+            transition.updateBounds(layer: glowView.layer, bounds: CGRect(origin: .zero, size: glowViewFrame.size))
         }
         
         let glowPath = UIBezierPath(roundedRect: videoBounds, cornerRadius: Constants.cornerRadius).cgPath
-        self.videoGlowMask.shadowPath = glowPath
+        transition.updateShadowPath(layer: self.videoGlowMask, path: glowPath)
         transition.updatePath(layer: self.videoGlowMask, path: glowPath)
-        transition.updateFrame(layer: self.videoGlowMask, frame: videoBounds)
+        transition.updatePosition(layer: self.videoGlowMask, position: videoBounds.center)
+        transition.updateBounds(layer: self.videoGlowMask, bounds: videoBounds)
     }
     
     private func updateVideoReady(_ ready: Bool) {
