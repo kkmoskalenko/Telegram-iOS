@@ -3,12 +3,11 @@ import UIKit
 import Display
 import AsyncDisplayKit
 import SwiftSignalKit
+import LegacyComponents
 
-private let compactNameFont = Font.regular(28.0)
-private let regularNameFont = Font.regular(36.0)
-
-private let compactStatusFont = Font.regular(18.0)
-private let regularStatusFont = Font.regular(18.0)
+private let nameFont = Font.regular(28.0)
+private let statusFont = Font.regular(16.0)
+private let reducedNameFont = Font.semibold(17.0)
 
 enum CallControllerStatusValue: Equatable {
     case text(string: String, displayLogo: Bool)
@@ -39,6 +38,7 @@ final class CallControllerStatusNode: ASDisplayNode {
     private let statusMeasureNode: TextNode
     private let receptionNode: CallControllerReceptionNode
     private let logoNode: ASImageNode
+    private let indicatorNode: CallControllerActivityIndicatorNode
     
     private let titleActivateAreaNode: AccessibilityAreaNode
     private let statusActivateAreaNode: AccessibilityAreaNode
@@ -68,13 +68,13 @@ final class CallControllerStatusNode: ASDisplayNode {
                 if case .timer = self.status {
                     self.statusTimer = SwiftSignalKit.Timer(timeout: 0.5, repeat: true, completion: { [weak self] in
                         if let strongSelf = self, let validLayoutWidth = strongSelf.validLayoutWidth {
-                            let _ = strongSelf.updateLayout(constrainedWidth: validLayoutWidth, transition: .immediate)
+                            let _ = strongSelf.updateLayout(constrainedWidth: validLayoutWidth, reducedSize: strongSelf.reducedSize, transition: .immediate)
                         }
                     }, queue: Queue.mainQueue())
                     self.statusTimer?.start()
                 } else {
                     if let validLayoutWidth = self.validLayoutWidth {
-                        let _ = self.updateLayout(constrainedWidth: validLayoutWidth, transition: .immediate)
+                        let _ = self.updateLayout(constrainedWidth: validLayoutWidth, reducedSize: self.reducedSize, transition: .immediate)
                     }
                 }
             }
@@ -97,7 +97,7 @@ final class CallControllerStatusNode: ASDisplayNode {
                 
                 if (oldValue == nil) != (self.reception != nil) {
                     if let validLayoutWidth = self.validLayoutWidth {
-                        let _ = self.updateLayout(constrainedWidth: validLayoutWidth, transition: .immediate)
+                        let _ = self.updateLayout(constrainedWidth: validLayoutWidth, reducedSize: self.reducedSize, transition: .immediate)
                     }
                 }
             }
@@ -106,6 +106,7 @@ final class CallControllerStatusNode: ASDisplayNode {
     
     private var statusTimer: SwiftSignalKit.Timer?
     private var validLayoutWidth: CGFloat?
+    private var reducedSize: Bool = false
     
     override init() {
         self.titleNode = TextNode()
@@ -120,6 +121,9 @@ final class CallControllerStatusNode: ASDisplayNode {
         self.logoNode = ASImageNode()
         self.logoNode.image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallTitleLogo"), color: .white)
         self.logoNode.isHidden = true
+        
+        self.indicatorNode = CallControllerActivityIndicatorNode(color: .white)
+        self.indicatorNode.isHidden = true
         
         self.titleActivateAreaNode = AccessibilityAreaNode()
         self.titleActivateAreaNode.accessibilityTraits = .staticText
@@ -136,6 +140,7 @@ final class CallControllerStatusNode: ASDisplayNode {
         self.statusContainerNode.addSubnode(self.statusNode)
         self.statusContainerNode.addSubnode(self.receptionNode)
         self.statusContainerNode.addSubnode(self.logoNode)
+        self.statusContainerNode.addSubnode(self.indicatorNode)
         
         self.addSubnode(self.titleActivateAreaNode)
         self.addSubnode(self.statusActivateAreaNode)
@@ -151,22 +156,16 @@ final class CallControllerStatusNode: ASDisplayNode {
         transition.updateAlpha(node: self.statusContainerNode, alpha: alpha)
     }
     
-    func updateLayout(constrainedWidth: CGFloat, transition: ContainedViewLayoutTransition) -> CGFloat {
+    func updateLayout(constrainedWidth: CGFloat, reducedSize: Bool, transition: ContainedViewLayoutTransition) -> CGFloat {
         self.validLayoutWidth = constrainedWidth
+        self.reducedSize = reducedSize
         
-        let nameFont: UIFont
-        let statusFont: UIFont
-        if constrainedWidth < 330.0 {
-            nameFont = compactNameFont
-            statusFont = compactStatusFont
-        } else {
-            nameFont = regularNameFont
-            statusFont = regularStatusFont
-        }
+        let nameFont: UIFont = reducedSize ? reducedNameFont : nameFont
+        let statusFont: UIFont = statusFont
         
         var statusOffset: CGFloat = 0.0
-        let statusText: String
-        let statusMeasureText: String
+        var statusText: String
+        var statusMeasureText: String
         var statusDisplayLogo: Bool = false
         switch self.status {
         case let .text(text, displayLogo):
@@ -175,6 +174,8 @@ final class CallControllerStatusNode: ASDisplayNode {
             statusDisplayLogo = displayLogo
             if displayLogo {
                 statusOffset += 10.0
+            } else if self.reception == nil {
+                statusOffset += 20.0
             }
         case let .timer(format, referenceTime):
             let duration = Int32(CFAbsoluteTimeGetCurrent() - referenceTime)
@@ -190,14 +191,18 @@ final class CallControllerStatusNode: ASDisplayNode {
             statusText = format(durationString, false)
             statusMeasureText = format(measureDurationString, true)
             if self.reception != nil {
-                statusOffset += 8.0
+                statusOffset += 6.0 + receptionNodeSize.width
             }
         }
         
-        let spacing: CGFloat = 1.0
-        let (titleLayout, titleApply) = TextNode.asyncLayout(self.titleNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: self.title, font: nameFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets(top: 2.0, left: 2.0, bottom: 2.0, right: 2.0)))
-        let (statusMeasureLayout, statusMeasureApply) = TextNode.asyncLayout(self.statusMeasureNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: statusMeasureText, font: statusFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 0, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .center, cutout: nil, insets: UIEdgeInsets(top: 2.0, left: 2.0, bottom: 2.0, right: 2.0)))
-        let (statusLayout, statusApply) = TextNode.asyncLayout(self.statusNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: statusText, font: statusFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 0, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .center, cutout: nil, insets: UIEdgeInsets(top: 2.0, left: 2.0, bottom: 2.0, right: 2.0)))
+        // TODO: Remove ellipsis from localization strings
+        while statusText.last == "." { statusText.removeLast() }
+        while statusMeasureText.last == "." { statusMeasureText.removeLast() }
+        
+        let spacing: CGFloat = reducedSize ? 0.0 : 4.0
+        let (titleLayout, titleApply) = TextNode.asyncLayout(self.titleNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: self.title, font: nameFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil))
+        let (statusMeasureLayout, statusMeasureApply) = TextNode.asyncLayout(self.statusMeasureNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: statusMeasureText, font: statusFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil))
+        let (statusLayout, statusApply) = TextNode.asyncLayout(self.statusNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: statusText, font: statusFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil))
         
         let _ = titleApply()
         let _ = statusApply()
@@ -208,13 +213,18 @@ final class CallControllerStatusNode: ASDisplayNode {
         
         self.titleNode.frame = CGRect(origin: CGPoint(x: floor((constrainedWidth - titleLayout.size.width) / 2.0), y: 0.0), size: titleLayout.size)
         self.statusContainerNode.frame = CGRect(origin: CGPoint(x: 0.0, y: titleLayout.size.height + spacing), size: CGSize(width: constrainedWidth, height: statusLayout.size.height))
-        self.statusNode.frame = CGRect(origin: CGPoint(x: floor((constrainedWidth - statusMeasureLayout.size.width) / 2.0) + statusOffset, y: 0.0), size: statusLayout.size)
-        self.receptionNode.frame = CGRect(origin: CGPoint(x: self.statusNode.frame.minX - receptionNodeSize.width, y: 9.0), size: receptionNodeSize)
+        self.statusNode.frame = CGRect(origin: CGPoint(x: floor((constrainedWidth - statusMeasureLayout.size.width - statusOffset) / 2.0), y: 0.0), size: statusLayout.size)
+        if self.reception != nil { self.statusNode.frame.origin.x += statusOffset }
+        self.receptionNode.frame = CGRect(origin: CGPoint(x: self.statusNode.frame.minX - statusOffset, y: -5.0), size: receptionNodeSize)
+        
         self.logoNode.isHidden = !statusDisplayLogo
         if let image = self.logoNode.image, let firstLineRect = statusMeasureLayout.linesRects().first {
             let firstLineOffset = floor((statusMeasureLayout.size.width - firstLineRect.width) / 2.0)
             self.logoNode.frame = CGRect(origin: CGPoint(x: self.statusNode.frame.minX + firstLineOffset - image.size.width - 7.0, y: 5.0), size: image.size)
         }
+        
+        self.indicatorNode.isHidden = self.reception != nil
+        self.indicatorNode.frame = CGRect(origin: CGPoint(x: self.statusNode.frame.maxX + 5.0, y: 1.0), size: activityIndicatorSize)
         
         self.titleActivateAreaNode.frame = self.titleNode.frame
         self.statusActivateAreaNode.frame = self.statusContainerNode.frame
@@ -223,6 +233,9 @@ final class CallControllerStatusNode: ASDisplayNode {
     }
 }
 
+// MARK: - Reception Node
+
+private let receptionNodeSize = CGSize(width: 20.0, height: 20.0)
 
 private final class CallControllerReceptionNodeParameters: NSObject {
     let reception: Int32
@@ -232,9 +245,7 @@ private final class CallControllerReceptionNodeParameters: NSObject {
     }
 }
 
-private let receptionNodeSize = CGSize(width: 24.0, height: 10.0)
-
-final class CallControllerReceptionNode : ASDisplayNode {
+private final class CallControllerReceptionNode : ASDisplayNode {
     var reception: Int32 = 4 {
         didSet {
             self.setNeedsDisplay()
@@ -256,25 +267,188 @@ final class CallControllerReceptionNode : ASDisplayNode {
         let context = UIGraphicsGetCurrentContext()!
         context.setFillColor(UIColor.white.cgColor)
         
-        if let parameters = parameters as? CallControllerReceptionNodeParameters{
+        if let parameters = parameters as? CallControllerReceptionNodeParameters, parameters.reception != .min {
             let width: CGFloat = 3.0
-            var spacing: CGFloat = 1.5
-            if UIScreenScale > 2 {
-                spacing = 4.0 / 3.0
-            }
+            let spacing: CGFloat = 2.0
             
             for i in 0 ..< 4 {
-                let height = 4.0 + 2.0 * CGFloat(i)
-                let rect = CGRect(x: bounds.minX + CGFloat(i) * (width + spacing), y: receptionNodeSize.height - height, width: width, height: height)
+                let height = 3.0 * CGFloat(i + 1)
+                let rect = CGRect(x: bounds.minX + 1.0 + CGFloat(i) * (width + spacing), y: receptionNodeSize.height - height, width: width, height: height)
                 
                 if i >= parameters.reception {
-                    context.setAlpha(0.4)
+                    context.setAlpha(0.3)
                 }
                 
-                let path = UIBezierPath(roundedRect: rect, cornerRadius: 0.5)
+                let path = UIBezierPath(roundedRect: rect, cornerRadius: 1.0)
                 context.addPath(path.cgPath)
                 context.fillPath()
             }
+        } else {
+            let callEndedImage = UIImage(bundleImageName: "Call/CallEndedIcon")
+            callEndedImage?.draw(at: CGPoint(x: 0.0, y: 4.0))
         }
+    }
+}
+
+// MARK: - Activity Indicator
+
+private let minDiameter: CGFloat = 2.0
+private let maxDiameter: CGFloat = 4.0
+private let activityIndicatorSize = CGSize(width: 24.0, height: 16.0)
+
+private func interpolate(from: CGFloat, to: CGFloat, value: CGFloat) -> CGFloat {
+    return (1.0 - value) * from + value * to
+}
+
+private func radiusFunction(value: CGFloat, timeOffset: CGFloat) -> CGFloat {
+    var clampedValue = value + timeOffset
+    if clampedValue > 1.0 {
+        clampedValue = clampedValue - floor(clampedValue)
+    }
+    if clampedValue < 0.4 {
+        return interpolate(from: minDiameter, to: maxDiameter, value: clampedValue / 0.4)
+    } else if clampedValue < 0.8 {
+        return interpolate(from: maxDiameter, to: minDiameter, value: (clampedValue - 0.4) / 0.4)
+    }
+    return minDiameter
+}
+
+private final class CallControllerActivityIndicatorNodeParameters: NSObject {
+    let color: UIColor
+    let progress: CGFloat
+    
+    init(color: UIColor, progress: CGFloat) {
+        self.color = color
+        self.progress = progress
+    }
+}
+
+private final class CallControllerActivityIndicatorNode: ASDisplayNode {
+    
+    var duration: CFTimeInterval {
+        return 1.0
+    }
+    
+    var timingFunction: CAMediaTimingFunction {
+        return CAMediaTimingFunction(name: CAMediaTimingFunctionName.linear)
+    }
+    
+    var color: UIColor? {
+        didSet {
+            self.setNeedsDisplay()
+        }
+    }
+    
+    var progress: CGFloat = 0.0 {
+        didSet {
+            self.setNeedsDisplay()
+        }
+    }
+    
+    init(color: UIColor) {
+        self.color = color
+        
+        super.init()
+        
+        self.isLayerBacked = true
+        self.displaysAsynchronously = true
+        self.isOpaque = false
+    }
+    
+    deinit {
+        self.stopAnimation()
+    }
+    
+    private func startAnimation() {
+        self.stopAnimation()
+        
+        let animation = POPBasicAnimation()
+        animation.property = POPAnimatableProperty.property(withName: "progress", initializer: { property in
+            property?.readBlock = { node, values in
+                values?.pointee = (node as! CallControllerActivityIndicatorNode).progress
+            }
+            property?.writeBlock = { node, values in
+                (node as! CallControllerActivityIndicatorNode).progress = values!.pointee
+            }
+            property?.threshold = 0.01
+        }) as? POPAnimatableProperty
+        animation.fromValue = 0.0 as NSNumber
+        animation.toValue = 1.0 as NSNumber
+        animation.timingFunction = self.timingFunction
+        animation.duration = self.duration
+        animation.repeatForever = true
+        
+        self.pop_add(animation, forKey: "animation")
+    }
+    
+    private func stopAnimation() {
+        self.pop_removeAnimation(forKey: "animation")
+    }
+    
+    override public func didEnterHierarchy() {
+        super.didEnterHierarchy()
+        self.startAnimation()
+    }
+    
+    override public func didExitHierarchy() {
+        super.didExitHierarchy()
+        self.stopAnimation()
+    }
+    
+    override func drawParameters(forAsyncLayer layer: _ASDisplayLayer) -> NSObjectProtocol? {
+        if let color = self.color {
+            return CallControllerActivityIndicatorNodeParameters(color: color, progress: self.progress)
+        } else {
+            return nil
+        }
+    }
+    
+    @objc override class func draw(_ bounds: CGRect, withParameters parameters: Any?, isCancelled: () -> Bool, isRasterizing: Bool) {
+        let context = UIGraphicsGetCurrentContext()!
+        
+        if !isRasterizing {
+            context.setBlendMode(.copy)
+            context.setFillColor(UIColor.clear.cgColor)
+            context.fill(bounds)
+        }
+        
+        guard let parameters = parameters as? CallControllerActivityIndicatorNodeParameters else {
+            return
+        }
+        
+        let leftPadding: CGFloat = 6.0
+        let topPadding: CGFloat = 9.0
+        let distance: CGFloat = 11.0 / 2.0
+
+        let minAlpha: CGFloat = 1.0
+        let deltaAlpha: CGFloat = 1.0 - minAlpha
+
+        var radius = radiusFunction(value: parameters.progress, timeOffset: 0.4)
+        radius = (max(minDiameter, radius) - minDiameter) / (maxDiameter - minDiameter)
+        radius = radius * 1.5
+
+        let initialAlpha = parameters.color.alpha
+        var dotsColor = parameters.color.withAlphaComponent((radius * deltaAlpha + minAlpha) * initialAlpha)
+        context.setFillColor(dotsColor.cgColor)
+        
+        context.fillEllipse(in: CGRect(x: leftPadding - minDiameter / 2.0 - radius / 2.0, y: topPadding - minDiameter / 2.0 - radius / 2.0, width: minDiameter + radius, height: minDiameter + radius))
+        
+        radius = radiusFunction(value: parameters.progress, timeOffset: 0.2)
+        radius = (max(minDiameter, radius) - minDiameter) / (maxDiameter - minDiameter)
+        radius = radius * 1.5
+        
+        dotsColor = parameters.color.withAlphaComponent((radius * deltaAlpha + minAlpha) * initialAlpha)
+        context.setFillColor(dotsColor.cgColor)
+        
+        context.fillEllipse(in: CGRect(x: leftPadding + distance - minDiameter / 2.0 - radius / 2.0, y: topPadding - minDiameter / 2.0 - radius / 2.0, width: minDiameter + radius, height: minDiameter + radius))
+        
+        radius = radiusFunction(value: parameters.progress, timeOffset: 0.0)
+        radius = (max(minDiameter, radius) - minDiameter) / (maxDiameter - minDiameter)
+        radius = radius * 1.5
+        
+        dotsColor = parameters.color.withAlphaComponent((radius * deltaAlpha + minAlpha) * initialAlpha)
+        context.setFillColor(dotsColor.cgColor)
+        
+        context.fillEllipse(in: CGRect(x: leftPadding + distance * 2.0 - minDiameter / 2.0 - radius / 2.0, y: topPadding - minDiameter / 2.0 - radius / 2.0, width: minDiameter + radius, height: minDiameter + radius))
     }
 }

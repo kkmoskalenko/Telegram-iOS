@@ -17,6 +17,7 @@ import AlertUI
 import PresentationDataUtils
 import DeviceAccess
 import ContextUI
+import AvatarNode
 
 private func interpolateFrame(from fromValue: CGRect, to toValue: CGRect, t: CGFloat) -> CGRect {
     return CGRect(x: floorToScreenPixels(toValue.origin.x * t + fromValue.origin.x * (1.0 - t)), y: floorToScreenPixels(toValue.origin.y * t + fromValue.origin.y * (1.0 - t)), width: floorToScreenPixels(toValue.size.width * t + fromValue.size.width * (1.0 - t)), height: floorToScreenPixels(toValue.size.height * t + fromValue.size.height * (1.0 - t)))
@@ -370,8 +371,12 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     private let containerNode: ASDisplayNode
     private let videoContainerNode: PinchSourceContainerNode
     
+    private let avatarNode: AvatarNode
     private let imageNode: TransformImageNode
     private let dimNode: ASImageNode
+    
+    private let avatarFont = avatarPlaceholderFont(size: floor(136.0 * 16.0 / 37.0))
+    private let avatarSize: CGFloat = 136.0
     
     private var candidateIncomingVideoNodeValue: CallVideoNode?
     private var incomingVideoNodeValue: CallVideoNode?
@@ -466,6 +471,8 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     
     private var currentRequestedAspect: CGFloat?
     
+    private var currentCallTimestamp: Double?
+    
     init(sharedContext: SharedAccountContext, account: Account, presentationData: PresentationData, statusBar: StatusBar, debugInfo: Signal<(String, String), NoError>, shouldStayHiddenUntilConnection: Bool = false, easyDebugAccess: Bool, call: PresentationCall) {
         self.sharedContext = sharedContext
         self.account = account
@@ -482,6 +489,10 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         self.containerNode = ASDisplayNode()
         
         self.videoContainerNode = PinchSourceContainerNode()
+        
+        self.avatarNode = AvatarNode(font: self.avatarFont)
+        self.avatarNode.isUserInteractionEnabled = false
+        self.avatarNode.isAccessibilityElement = false
         
         self.imageNode = TransformImageNode()
         self.imageNode.contentAnimations = [.subsequentUpdates]
@@ -531,6 +542,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         }
         
         self.containerNode.addSubnode(self.imageNode)
+        self.containerNode.addSubnode(self.avatarNode)
         self.containerNode.addSubnode(self.videoContainerNode)
         self.containerNode.addSubnode(self.dimNode)
         self.containerNode.addSubnode(self.statusNode)
@@ -788,14 +800,11 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     func updatePeer(accountPeer: Peer, peer: Peer, hasOther: Bool) {
         if !arePeersEqual(self.peer, peer) {
             self.peer = peer
-            if let peerReference = PeerReference(peer), !peer.profileImageRepresentations.isEmpty {
-                let representations: [ImageRepresentationWithReference] = peer.profileImageRepresentations.map({ ImageRepresentationWithReference(representation: $0, reference: .avatar(peer: peerReference, resource: $0.resource)) })
-                self.imageNode.setSignal(chatAvatarGalleryPhoto(account: self.account, representations: representations, immediateThumbnailData: nil, autoFetchFullSize: true))
-                self.dimNode.isHidden = false
-            } else {
-                self.imageNode.setSignal(callDefaultBackground())
-                self.dimNode.isHidden = true
-            }
+            
+            self.avatarNode.setPeer(context: self.call.context, account: self.account, theme: self.presentationData.theme, peer: EnginePeer(peer), displayDimensions: CGSize(width: self.avatarSize, height: self.avatarSize))
+            
+            self.imageNode.setSignal(callDefaultBackground())
+            self.dimNode.isHidden = true
             
             self.toastNode.title = EnginePeer(peer).compactDisplayTitle
             self.statusNode.title = EnginePeer(peer).displayTitle(strings: self.presentationData.strings, displayOrder: self.presentationData.nameDisplayOrder)
@@ -1051,7 +1060,11 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                     statusValue = .text(string: self.presentationData.strings.Call_StatusRequesting, displayLogo: false)
                 }
             case .terminating:
-                statusValue = .text(string: self.presentationData.strings.Call_StatusEnded, displayLogo: false)
+                self.statusNode.title = self.presentationData.strings.Call_StatusEnded
+                statusReception = .min
+                statusValue = .timer({ value, _ in
+                    self.currentCallTimestamp == nil ? "00:00" : value
+                }, self.currentCallTimestamp ?? 0.0)
             case let .terminated(_, reason, _):
                 if let reason = reason {
                     switch reason {
@@ -1060,7 +1073,11 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                                 case .busy:
                                     statusValue = .text(string: self.presentationData.strings.Call_StatusBusy, displayLogo: false)
                                 case .hungUp, .missed:
-                                    statusValue = .text(string: self.presentationData.strings.Call_StatusEnded, displayLogo: false)
+                                    self.statusNode.title = self.presentationData.strings.Call_StatusEnded
+                                    statusReception = .min
+                                    statusValue = .timer({ value, _ in
+                                        self.currentCallTimestamp == nil ? "00:00" : value
+                                    }, self.currentCallTimestamp ?? 0.0)
                             }
                         case let .error(error):
                             let text = self.presentationData.strings.Call_StatusFailed
@@ -1085,7 +1102,11 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                             statusValue = .text(string: text, displayLogo: false)
                     }
                 } else {
-                    statusValue = .text(string: self.presentationData.strings.Call_StatusEnded, displayLogo: false)
+                    self.statusNode.title = self.presentationData.strings.Call_StatusEnded
+                    statusReception = .min
+                    statusValue = .timer({ value, _ in
+                        self.currentCallTimestamp == nil ? "00:00" : value
+                    }, self.currentCallTimestamp ?? 0.0)
                 }
             case .ringing:
                 var text: String
@@ -1120,6 +1141,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                     }
                 }
                 
+                self.currentCallTimestamp = timestamp
                 statusValue = .timer({ value, measure in
                     if isReconnecting || (self.outgoingVideoViewRequested && value == "00:00" && !measure) {
                         return strings.Call_StatusConnecting
@@ -1236,7 +1258,6 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 self.dimNode.image = image
             }
         }
-        self.statusNode.setVisible(visible || self.keyPreviewNode != nil, transition: transition)
     }
     
     private func maybeScheduleUIHidingForActiveVideoCall() {
@@ -1578,7 +1599,15 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         let apply = self.imageNode.asyncLayout()(arguments)
         apply()
         
-        let navigationOffset: CGFloat = max(20.0, layout.safeInsets.top)
+        let maybeTopSafeArea: CGFloat
+        if layout.statusBarHeight == 54.0 {
+            // Workaround for iPhone 14 Pro / Pro Max
+            maybeTopSafeArea = 59.0
+        } else {
+            maybeTopSafeArea = 0.0
+        }
+        
+        let navigationOffset: CGFloat = max(20.0, layout.safeInsets.top, maybeTopSafeArea)
         let topOriginY = interpolate(from: -20.0, to: navigationOffset, value: uiDisplayTransition)
         
         let backSize = self.backButtonNode.measure(CGSize(width: 320.0, height: 100.0))
@@ -1591,27 +1620,14 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         transition.updateAlpha(node: self.backButtonNode, alpha: overlayAlpha)
         transition.updateAlpha(node: self.toastNode, alpha: toastAlpha)
         
-        var statusOffset: CGFloat
-        if layout.metrics.widthClass == .regular && layout.metrics.heightClass == .regular {
-            if layout.size.height.isEqual(to: 1366.0) {
-                statusOffset = 160.0
-            } else {
-                statusOffset = 120.0
-            }
-        } else {
-            if layout.size.height.isEqual(to: 736.0) {
-                statusOffset = 80.0
-            } else if layout.size.width.isEqual(to: 320.0) {
-                statusOffset = 60.0
-            } else {
-                statusOffset = 64.0
-            }
-        }
+        let avatarSize = CGSize(width: 136.0, height: 136.0)
+        let avatarOrigin = CGPoint(x: (containerFullScreenFrame.width - avatarSize.width) / 2, y: topOriginY + 163.0)
+        transition.updateFrame(node: self.avatarNode, frame: CGRect(origin: avatarOrigin, size: avatarSize))
         
-        statusOffset += layout.safeInsets.top
-        
-        let statusHeight = self.statusNode.updateLayout(constrainedWidth: layout.size.width, transition: transition)
-        transition.updateFrame(node: self.statusNode, frame: CGRect(origin: CGPoint(x: 0.0, y: statusOffset), size: CGSize(width: layout.size.width, height: statusHeight)))
+        // TODO: Maybe truncate status node
+        let hasVideo = self.outgoingVideoNodeValue != nil || self.incomingVideoNodeValue != nil
+        let statusHeight = self.statusNode.updateLayout(constrainedWidth: layout.size.width, reducedSize: hasVideo, transition: transition)
+        transition.updateFrame(node: self.statusNode, frame: CGRect(origin: CGPoint(x: 0.0, y: hasVideo ? topOriginY : avatarOrigin.y + avatarSize.height + 40.0), size: CGSize(width: layout.size.width, height: statusHeight)))
         transition.updateAlpha(node: self.statusNode, alpha: overlayAlpha)
         
         transition.updateFrame(node: self.toastNode, frame: CGRect(origin: CGPoint(x: 0.0, y: toastOriginY), size: CGSize(width: layout.size.width, height: toastHeight)))
