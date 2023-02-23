@@ -456,7 +456,7 @@ final class LegacyCallControllerNode: ASDisplayNode, CallControllerNodeProtocol 
                 keyPreviewNode.updateLayout(size: validLayout.size, transition: .immediate)
                 
                 self.keyButtonNode.isHidden = true
-                keyPreviewNode.animateIn(from: self.keyButtonNode.frame, fromNode: self.keyButtonNode)
+                keyPreviewNode.animateIn(from: self.keyButtonNode.frame, fromNode: self.keyButtonNode, lightStyle: false)
             }
         }
     }

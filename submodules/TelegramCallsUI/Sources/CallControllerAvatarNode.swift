@@ -65,7 +65,7 @@ final class CallControllerAvatarNode: ASDisplayNode {
         
         self.connectingAnimationTimer = SwiftSignalKit.Timer(timeout: 2.0, repeat: true, completion: { [weak self] in
             self?.layer.animateScale(from: 1.0, to: 1.05, duration: 2.0/3.0, removeOnCompletion: false) { [weak self] _ in
-                self?.layer.animateScale(from: 1.05, to: 1.0, duration: 2.0/3.0, delay: 1.0/3.0, removeOnCompletion: false)
+                self?.layer.animateScale(from: 1.05, to: 1.0, duration: 2.0/3.0, delay: 1.0/3.0)
             }
         }, queue: .mainQueue())
         self.connectingAnimationTimer?.start()
@@ -81,10 +81,10 @@ final class CallControllerAvatarNode: ASDisplayNode {
         self.voiceBlobView.layer.animateScale(from: 1.0, to: 1.35, duration: stageDuration, removeOnCompletion: false)
         self.avatarNode.layer.animateScale(from: avatarScale, to: 1.1, duration: stageDuration, removeOnCompletion: false) { [weak self] _ in
             guard let strongSelf = self else { return }
-            strongSelf.voiceBlobView.layer.animateScale(from: 1.35, to: 1.0, duration: stageDuration, removeOnCompletion: false)
+            strongSelf.voiceBlobView.layer.animateScale(from: 1.35, to: 1.0, duration: stageDuration)
             strongSelf.avatarNode.layer.animateScale(from: 1.1, to: 0.95, duration: stageDuration, removeOnCompletion: false) { [weak self] _ in
                 guard let strongSelf = self else { return }
-                strongSelf.avatarNode.layer.animateScale(from: 0.95, to: 1.0, duration: stageDuration, removeOnCompletion: false)
+                strongSelf.avatarNode.layer.animateScale(from: 0.95, to: 1.0, duration: stageDuration)
             }
         }
     }
@@ -100,7 +100,7 @@ final class CallControllerAvatarNode: ASDisplayNode {
             self.avatarNode.layer.animateScale(from: avatarScale, to: 1.0, duration: 0.25, removeOnCompletion: false)
         }
         
-        self.voiceBlobView.layer.animateScale(from: 1.0, to: 0.0, duration: 0.25, removeOnCompletion: false) { [weak self] _ in
+        self.voiceBlobView.layer.animateScale(from: 1.0, to: 0.1, duration: 0.25, removeOnCompletion: false) { [weak self] _ in
             self?.voiceBlobView.isHidden = true
             self?.voiceBlobView.stopAnimating()
             self?.voiceBlobView.layer.removeAllAnimations()
@@ -112,7 +112,7 @@ final class CallControllerAvatarNode: ASDisplayNode {
         
         self.voiceBlobView.isHidden = false
         self.voiceBlobView.startAnimating()
-        self.voiceBlobView.layer.animateSpring(from: 0.1 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.45, removeOnCompletion: false)
+        self.voiceBlobView.layer.animateSpring(from: 0.1 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.45)
     }
     
     override public func didEnterHierarchy() {
