@@ -18,6 +18,7 @@ final class CallControllerAvatarNode: ASDisplayNode {
     private var presentationData: PresentationData
     private let call: PresentationCall
     
+    private var connectingAnimationTimer: SwiftSignalKit.Timer?
     private var audioLevelDisposable: Disposable?
     
     private lazy var avatarNode: AvatarNode = {
@@ -51,11 +52,67 @@ final class CallControllerAvatarNode: ASDisplayNode {
     }
     
     deinit {
+        self.connectingAnimationTimer?.invalidate()
         self.audioLevelDisposable?.dispose()
     }
     
     func setPeer(_ peer: Peer) {
         self.avatarNode.setPeer(context: self.call.context, account: self.account, theme: self.presentationData.theme, peer: EnginePeer(peer), displayDimensions: avatarSize)
+    }
+    
+    func playConnectingAnimation() {
+        guard self.connectingAnimationTimer == nil else { return }
+        
+        self.connectingAnimationTimer = SwiftSignalKit.Timer(timeout: 2.0, repeat: true, completion: { [weak self] in
+            self?.layer.animateScale(from: 1.0, to: 1.05, duration: 2.0/3.0, removeOnCompletion: false) { [weak self] _ in
+                self?.layer.animateScale(from: 1.05, to: 1.0, duration: 2.0/3.0, delay: 1.0/3.0, removeOnCompletion: false)
+            }
+        }, queue: .mainQueue())
+        self.connectingAnimationTimer?.start()
+    }
+    
+    func playConnectedAnimation() {
+        self.connectingAnimationTimer?.invalidate()
+        self.connectingAnimationTimer = nil
+        
+        let stageDuration: Double = 1.0 / 6.0
+        let avatarScale = self.avatarNode.layer.value(forKeyPath: "transform.scale.x") as? CGFloat ?? 1.0
+        
+        self.voiceBlobView.layer.animateScale(from: 1.0, to: 1.35, duration: stageDuration, removeOnCompletion: false)
+        self.avatarNode.layer.animateScale(from: avatarScale, to: 1.1, duration: stageDuration, removeOnCompletion: false) { [weak self] _ in
+            guard let strongSelf = self else { return }
+            strongSelf.voiceBlobView.layer.animateScale(from: 1.35, to: 1.0, duration: stageDuration, removeOnCompletion: false)
+            strongSelf.avatarNode.layer.animateScale(from: 1.1, to: 0.95, duration: stageDuration, removeOnCompletion: false) { [weak self] _ in
+                guard let strongSelf = self else { return }
+                strongSelf.avatarNode.layer.animateScale(from: 0.95, to: 1.0, duration: stageDuration, removeOnCompletion: false)
+            }
+        }
+    }
+    
+    func playMuteAnimation() {
+        guard !self.voiceBlobView.isHidden else { return }
+        
+        if self.connectingAnimationTimer != nil {
+            self.connectingAnimationTimer?.invalidate()
+            self.connectingAnimationTimer = nil
+            
+            let avatarScale = self.avatarNode.layer.value(forKeyPath: "transform.scale.x") as? CGFloat ?? 1.0
+            self.avatarNode.layer.animateScale(from: avatarScale, to: 1.0, duration: 0.25, removeOnCompletion: false)
+        }
+        
+        self.voiceBlobView.layer.animateScale(from: 1.0, to: 0.0, duration: 0.25, removeOnCompletion: false) { [weak self] _ in
+            self?.voiceBlobView.isHidden = true
+            self?.voiceBlobView.stopAnimating()
+            self?.voiceBlobView.layer.removeAllAnimations()
+        }
+    }
+    
+    func playUnmuteAnimation() {
+        guard self.voiceBlobView.isHidden else { return }
+        
+        self.voiceBlobView.isHidden = false
+        self.voiceBlobView.startAnimating()
+        self.voiceBlobView.layer.animateSpring(from: 0.1 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.45, removeOnCompletion: false)
     }
     
     override public func didEnterHierarchy() {

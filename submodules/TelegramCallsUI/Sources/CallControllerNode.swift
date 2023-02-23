@@ -10,13 +10,13 @@ import TelegramUIPreferences
 import TelegramAudio
 import AccountContext
 import LocalizedPeerData
-import PhotoResources
 import CallsEmoji
 import TooltipUI
 import AlertUI
 import PresentationDataUtils
 import DeviceAccess
 import ContextUI
+import GradientBackground
 
 private func interpolateFrame(from fromValue: CGRect, to toValue: CGRect, t: CGFloat) -> CGRect {
     return CGRect(x: floorToScreenPixels(toValue.origin.x * t + fromValue.origin.x * (1.0 - t)), y: floorToScreenPixels(toValue.origin.y * t + fromValue.origin.y * (1.0 - t)), width: floorToScreenPixels(toValue.size.width * t + fromValue.size.width * (1.0 - t)), height: floorToScreenPixels(toValue.size.height * t + fromValue.size.height * (1.0 - t)))
@@ -354,6 +354,25 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         case bottomRight
     }
     
+    private enum BackgroundGradient {
+        case blueViolet
+        case blueGreen
+        case orangeRed
+        
+        var colors: [UIColor] {
+            let hexCodes: [UInt32]
+            switch self {
+            case .blueViolet:
+                hexCodes = [0xAC65D4, 0x7261DA, 0x5295D6, 0x616AD5]
+            case .blueGreen:
+                hexCodes = [0x53A6DE, 0x398D6F, 0xBAC05D, 0x3C9C8F]
+            case .orangeRed:
+                hexCodes = [0xC94986, 0xFF7E46, 0xB84498, 0xF4992E]
+            }
+            return hexCodes.map(UIColor.init(rgb:))
+        }
+    }
+    
     private let sharedContext: SharedAccountContext
     private let account: Account
     
@@ -371,8 +390,10 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     private let videoContainerNode: PinchSourceContainerNode
     
     private let avatarNode: CallControllerAvatarNode
-    private let imageNode: TransformImageNode
     private let dimNode: ASImageNode
+    private let backgroundNode: GradientBackgroundNode
+    private var backgroundAnimationTimer: SwiftSignalKit.Timer?
+    private var currentBackground: BackgroundGradient = .blueViolet
     
     private var candidateIncomingVideoNodeValue: CallVideoNode?
     private var incomingVideoNodeValue: CallVideoNode?
@@ -487,8 +508,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         self.videoContainerNode = PinchSourceContainerNode()
         
         self.avatarNode = CallControllerAvatarNode(sharedContext: sharedContext, account: account, presentationData: presentationData, call: call)
-        self.imageNode = TransformImageNode()
-        self.imageNode.contentAnimations = [.subsequentUpdates]
+        self.backgroundNode = GradientBackgroundNode(colors: self.currentBackground.colors, adjustSaturation: false)
         self.dimNode = ASImageNode()
         self.dimNode.contentMode = .scaleToFill
         self.dimNode.isUserInteractionEnabled = false
@@ -534,7 +554,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             }
         }
         
-        self.containerNode.addSubnode(self.imageNode)
+        self.containerNode.addSubnode(self.backgroundNode)
         self.containerNode.addSubnode(self.avatarNode)
         self.containerNode.addSubnode(self.videoContainerNode)
         self.containerNode.addSubnode(self.dimNode)
@@ -757,6 +777,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         if let orientationDidChangeObserver = self.orientationDidChangeObserver {
             NotificationCenter.default.removeObserver(orientationDidChangeObserver)
         }
+        self.backgroundAnimationTimer?.invalidate()
     }
     
     func displayCameraTooltip() {
@@ -788,6 +809,9 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         
         let tapRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.tapGesture(_:)))
         self.view.addGestureRecognizer(tapRecognizer)
+        
+        self.avatarNode.playConnectingAnimation()
+        self.startBackgroundAnimation()
     }
     
     func updatePeer(accountPeer: Peer, peer: Peer, hasOther: Bool) {
@@ -795,7 +819,6 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             self.peer = peer
             
             self.avatarNode.setPeer(peer)
-            self.imageNode.setSignal(callDefaultBackground())
             self.dimNode.isHidden = true
             
             self.toastNode.title = EnginePeer(peer).compactDisplayTitle
@@ -1057,6 +1080,9 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 statusValue = .timer({ value, _ in
                     self.currentCallTimestamp == nil ? "00:00" : value
                 }, self.currentCallTimestamp ?? 0.0)
+                
+                self.avatarNode.playMuteAnimation()
+                self.updateBackground(to: .blueViolet)
             case let .terminated(_, reason, _):
                 if let reason = reason {
                     switch reason {
@@ -1100,6 +1126,9 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                         self.currentCallTimestamp == nil ? "00:00" : value
                     }, self.currentCallTimestamp ?? 0.0)
                 }
+            
+                self.avatarNode.playMuteAnimation()
+                self.updateBackground(to: .blueViolet)
             case .ringing:
                 var text: String
                 if self.call.isVideo {
@@ -1131,9 +1160,13 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                     if let (layout, navigationBarHeight) = self.validLayout {
                         self.containerLayoutUpdated(layout, navigationBarHeight: navigationBarHeight, transition: .immediate)
                     }
+                    
+                    self.avatarNode.playConnectedAnimation()
                 }
                 
+                self.updateBackground(to: (reception ?? 0) >= 1 ? .blueGreen : .orangeRed)
                 self.currentCallTimestamp = timestamp
+                
                 statusValue = .timer({ value, measure in
                     if isReconnecting || (self.outgoingVideoViewRequested && value == "00:00" && !measure) {
                         return strings.Call_StatusConnecting
@@ -1163,6 +1196,12 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             default:
                 self.isUIHidden = false
             }
+        }
+        
+        if case .muted = callState.remoteAudioState {
+            self.avatarNode.playMuteAnimation()
+        } else {
+            self.avatarNode.playUnmuteAnimation()
         }
         
         self.updateToastContent()
@@ -1388,6 +1427,29 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         }
     }
     
+    private func startBackgroundAnimation() {
+        guard self.backgroundAnimationTimer == nil else { return }
+        self.backgroundAnimationTimer = SwiftSignalKit.Timer(timeout: 0.5, repeat: true, completion: { [weak self] in
+            let transition = ContainedViewLayoutTransition.animated(duration: 0.5, curve: .linear)
+            self?.backgroundNode.animateEvent(transition: transition, extendAnimation: false, backwards: false, completion: {})
+        }, queue: .mainQueue())
+        self.backgroundAnimationTimer?.start()
+    }
+    
+    private func stopBackgroundAnimation() {
+        self.backgroundAnimationTimer?.invalidate()
+        self.backgroundAnimationTimer = nil
+    }
+    
+    private func updateBackground(to gradient: BackgroundGradient) {
+        guard self.currentBackground != gradient else { return }
+        self.currentBackground = gradient
+        
+        UIView.transition(with: self.backgroundNode.view, duration: 1.0 / 3.0, options: [.curveEaseInOut, .transitionCrossDissolve]) { [weak self] in
+            self?.backgroundNode.updateColors(colors: gradient.colors)
+        }
+    }
+    
     func expandFromPipIfPossible() {
         if self.pictureInPictureTransitionFraction.isEqual(to: 1.0), let (layout, navigationHeight) = self.validLayout {
             self.pictureInPictureTransitionFraction = 0.0
@@ -1586,10 +1648,8 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             keyPreviewNode.updateLayout(size: layout.size, transition: .immediate)
         }
         
-        transition.updateFrame(node: self.imageNode, frame: containerFullScreenFrame)
-        let arguments = TransformImageArguments(corners: ImageCorners(), imageSize: CGSize(width: 640.0, height: 640.0).aspectFilled(layout.size), boundingSize: layout.size, intrinsicInsets: UIEdgeInsets())
-        let apply = self.imageNode.asyncLayout()(arguments)
-        apply()
+        self.backgroundNode.updateLayout(size: layout.size, transition: transition, extendAnimation: false, backwards: false, completion: {})
+        transition.updateFrame(node: self.backgroundNode, frame: containerFullScreenFrame)
         
         let maybeTopSafeArea: CGFloat
         if layout.statusBarHeight == 54.0 {

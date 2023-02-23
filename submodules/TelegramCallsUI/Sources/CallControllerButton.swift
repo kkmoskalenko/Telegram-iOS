@@ -19,12 +19,14 @@ final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
             }
             
             case blurred(isFilled: Bool)
+            case white(isFilled: Bool)
             case color(Color)
             
             var isFilled: Bool {
-                if case let .blurred(isFilled) = self {
+                switch self {
+                case let .blurred(isFilled), let .white(isFilled):
                     return isFilled
-                } else {
+                case .color(_):
                     return false
                 }
             }
@@ -179,7 +181,7 @@ final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
             switch content.appearance {
             case .blurred:
                 self.effectView.isHidden = false
-            case .color:
+            case .white, .color:
                 self.effectView.isHidden = true
             }
             
@@ -239,6 +241,13 @@ final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
                             drawOverMask = true
                             context.setBlendMode(.copy)
                         }
+                    }
+                case let .white(isFilled):
+                    fillColor = UIColor(white: 1.0, alpha: isFilled ? 1.0 : 0.25)
+                    drawOverMask = content.hasProgress || isFilled
+                    
+                    if content.hasProgress {
+                        ellipseRect = ellipseRect.insetBy(dx: 7.0, dy: 7.0)
                     }
                 case let .color(color):
                     switch color {
@@ -357,7 +366,7 @@ final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
                 let fillColor: UIColor
                 context.setBlendMode(.normal)
                 switch content.appearance {
-                case let .blurred(isFilled):
+                case let .blurred(isFilled), let .white(isFilled):
                     if isFilled {
                         fillColor = UIColor(white: 0.0, alpha: 0.1)
                     } else {

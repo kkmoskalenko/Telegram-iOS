@@ -153,7 +153,7 @@ final class CallControllerButtonsNode: ASDisplayNode {
             }
         }
         
-        let minSmallButtonSideInset: CGFloat = width > 320.0 ? 34.0 : 16.0
+        let minSmallButtonSideInset: CGFloat = width > 320.0 ? 30.0 : 16.0
         let maxSmallButtonSpacing: CGFloat = 36.0
         let smallButtonSize: CGFloat = 56.0
         let topBottomSpacing: CGFloat = 84.0
@@ -395,7 +395,7 @@ final class CallControllerButtonsNode: ASDisplayNode {
                 }
             case let .enableCamera(isActivated, isEnabled, isInitializing, isScreencastActive):
                 buttonContent = CallControllerButtonItemNode.Content(
-                    appearance: .blurred(isFilled: isActivated),
+                    appearance: .white(isFilled: isActivated),
                     image: isScreencastActive ? .screencast : .camera,
                     isEnabled: isEnabled,
                     hasProgress: isInitializing
@@ -410,7 +410,7 @@ final class CallControllerButtonsNode: ASDisplayNode {
                 }
             case let .switchCamera(isEnabled):
                 buttonContent = CallControllerButtonItemNode.Content(
-                    appearance: .blurred(isFilled: false),
+                    appearance: .white(isFilled: false),
                     image: .flipCamera,
                     isEnabled: isEnabled
                 )
@@ -451,7 +451,7 @@ final class CallControllerButtonsNode: ASDisplayNode {
                     buttonAccessibilityValue = strings.Call_AudioRouteHeadphones
                 }
                 buttonContent = CallControllerButtonItemNode.Content(
-                    appearance: .blurred(isFilled: isFilled),
+                    appearance: .white(isFilled: isFilled),
                     image: image
                 )
                 buttonText = title
@@ -461,7 +461,7 @@ final class CallControllerButtonsNode: ASDisplayNode {
                 }
             case let .mute(isMuted):
                 buttonContent = CallControllerButtonItemNode.Content(
-                    appearance: .blurred(isFilled: isMuted),
+                    appearance: .white(isFilled: isMuted),
                     image: .mute
                 )
                 buttonText = strings.Call_Mute
