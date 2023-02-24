@@ -9,6 +9,8 @@ import TelegramPresentationData
 import TelegramVoip
 import AccountContext
 import AppBundle
+import AnimatedStickerNode
+import TelegramAnimatedStickerNode
 
 private final class CallRatingAlertContentNode: AlertContentNode {
     private let strings: PresentationStrings
@@ -280,6 +282,180 @@ private final class CallRatingAlertContentNode: AlertContentNode {
         }
         
         return resultSize
+    }
+}
+
+final class CallControllerRatingNode: ASDisplayNode {
+    
+    // TODO: Replace with a localized string
+    private let subtitleString = "Please rate the quality of this call."
+    
+    private let strings: PresentationStrings
+    
+    var rating: Int?
+    var apply: ((Int) -> Void)?
+    
+    private let titleNode: ASTextNode
+    private let subtitleNode: ASTextNode
+    private var starContainerNode: ASDisplayNode
+    private let starNodes: [ASButtonNode]
+    private let effectView: UIVisualEffectView
+    private let animationNode: AnimatedStickerNode
+    
+    init(strings: PresentationStrings) {
+        self.strings = strings
+        
+        self.titleNode = ASTextNode()
+        self.titleNode.maximumNumberOfLines = 2
+        self.subtitleNode = ASTextNode()
+        self.subtitleNode.maximumNumberOfLines = 2
+        self.starContainerNode = ASDisplayNode()
+        self.starNodes = (0 ..< 5).map { _ in ASButtonNode() }
+        self.effectView = UIVisualEffectView()
+        self.animationNode = DefaultAnimatedStickerNodeImpl()
+        
+        super.init()
+        
+        self.view.addSubview(self.effectView)
+        self.addSubnode(self.titleNode)
+        self.addSubnode(self.subtitleNode)
+        self.addSubnode(self.starContainerNode)
+        self.starContainerNode.addSubnode(self.animationNode)
+        
+        for node in self.starNodes {
+            node.addTarget(self, action: #selector(self.starPressed(_:)), forControlEvents: .touchDown)
+            node.addTarget(self, action: #selector(self.starReleased(_:)), forControlEvents: .touchUpInside)
+            self.starContainerNode.addSubnode(node)
+        }
+        
+        self.titleNode.attributedText = NSAttributedString(string: self.strings.Call_RateCall, font: Font.semibold(16.0), textColor: UIColor.white, paragraphAlignment: .center)
+        self.subtitleNode.attributedText = NSAttributedString(string: self.subtitleString, font: Font.regular(16.0), textColor: UIColor.white, paragraphAlignment: .center)
+        
+        for node in self.starNodes {
+            node.setImage(generateTintedImage(image: UIImage(bundleImageName: "Call/NewStar"), color: UIColor.white), for: [])
+            let highlighted = generateTintedImage(image: UIImage(bundleImageName: "Call/NewStarHighlighted"), color: UIColor.white)
+            node.setImage(highlighted, for: [.selected])
+            node.setImage(highlighted, for: [.selected, .highlighted])
+        }
+        
+        self.effectView.effect = UIBlurEffect(style: .light)
+        self.effectView.alpha = 0.85
+        
+        let source = AnimatedStickerNodeLocalFileSource(name: "CallRated")
+        self.animationNode.setup(source: source, width: 512, height: 512, playbackMode: .once, mode: .direct(cachePathPrefix: nil))
+        self.animationNode.visibility = true
+        self.animationNode.autoplay = true
+        
+        self.effectView.layer.masksToBounds = true
+        self.effectView.layer.cornerRadius = 20.0
+        if #available(iOS 13.0, *) {
+            self.effectView.layer.cornerCurve = .continuous
+        }
+    }
+    
+    override func didLoad() {
+        super.didLoad()
+        
+        let gestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(self.panGesture(_:)))
+        self.starContainerNode.view.addGestureRecognizer(gestureRecognizer)
+    }
+    
+    func updateLayout(constrainedWidth: CGFloat, transition: ContainedViewLayoutTransition) -> CGFloat {
+        let titleSize = self.titleNode.measure(CGSize(width: constrainedWidth - 28.0, height: .greatestFiniteMagnitude))
+        transition.updateFrame(node: self.titleNode, frame: CGRect(origin: CGPoint(x: (constrainedWidth - titleSize.width) / 2.0, y: 20.0), size: titleSize))
+        
+        let subtitleSize = self.subtitleNode.measure(CGSize(width: constrainedWidth - 28.0, height: .greatestFiniteMagnitude))
+        transition.updateFrame(node: self.subtitleNode, frame: CGRect(origin: CGPoint(x: (constrainedWidth - subtitleSize.width) / 2.0, y: self.titleNode.frame.maxY + 10.0), size: subtitleSize))
+        
+        let starSize = CGSize(width: 42.0, height: 42.0)
+        let starSpacing: CGFloat = 4.0
+        let starsSize = CGSize(width: starSize.width * 5.0 + starSpacing * 4.0, height: starSize.height)
+        self.starContainerNode.frame = CGRect(origin: CGPoint(x: (constrainedWidth - starsSize.width) / 2.0, y: self.subtitleNode.frame.maxY + 10.0), size: starsSize)
+        for (index, node) in self.starNodes.enumerated() {
+            transition.updateFrame(node: node, frame: CGRect(origin: CGPoint(x: CGFloat(index) * (starSize.width + starSpacing), y: 0.0), size: starSize))
+        }
+        
+        let finalHeight = titleSize.height + subtitleSize.height + starSize.height + 60.0
+        transition.updateFrame(view: self.effectView, frame: CGRect(origin: .zero, size: CGSize(width: constrainedWidth, height: finalHeight)))
+        
+        return finalHeight
+    }
+    
+    @objc private func panGesture(_ gestureRecognizer: UIPanGestureRecognizer) {
+        let location = gestureRecognizer.location(in: self.starContainerNode.view)
+        var selectedNode: ASButtonNode?
+        for node in self.starNodes {
+            if node.frame.contains(location) {
+                selectedNode = node
+                break
+            }
+        }
+        if let selectedNode = selectedNode {
+            switch gestureRecognizer.state {
+                case .began, .changed:
+                    self.starPressed(selectedNode)
+                case .ended:
+                    self.starReleased(selectedNode)
+                case .cancelled:
+                    self.resetStars()
+                default:
+                    break
+            }
+        } else if !self.starContainerNode.bounds.contains(location) {
+            self.resetStars()
+        }
+    }
+    
+    private func resetStars() {
+        for i in 0 ..< self.starNodes.count {
+            let node = self.starNodes[i]
+            node.isSelected = false
+        }
+    }
+    
+    @objc private func starPressed(_ sender: ASButtonNode) {
+        if let index = self.starNodes.firstIndex(of: sender) {
+            self.rating = index + 1
+            for i in 0 ..< self.starNodes.count {
+                let node = self.starNodes[i]
+                node.isSelected = i <= index
+            }
+        }
+    }
+    
+    @objc private func starReleased(_ sender: ASButtonNode) {
+        if let index = self.starNodes.firstIndex(of: sender) {
+            self.rating = index + 1
+            for i in 0 ..< self.starNodes.count {
+                let node = self.starNodes[i]
+                node.isSelected = i <= index
+            }
+            if let rating = self.rating {
+                self.isUserInteractionEnabled = false
+                self.playEffect()
+                self.apply?(rating)
+            }
+        }
+    }
+    
+    private func playEffect() {
+        guard let rating = self.rating else { return }
+        
+        for (index, starNode) in starNodes.enumerated() {
+            guard index < rating else { break }
+            
+            starNode.layer.animateScale(from: 1.0, to: 1.1, duration: 0.1, removeOnCompletion: false, completion: { [weak starNode] _ in
+                starNode?.layer.animateScale(from: 1.1, to: 1.0, duration: 0.1)
+            })
+            
+            if rating >= 4 && rating == index + 1 {
+                let animationSize = CGSize(width: 120.0, height: 120.0)
+                let animationOrigin = starNode.frame.center.offsetBy(dx: -animationSize.width / 2.0, dy: -animationSize.height / 2.0)
+                self.animationNode.updateLayout(size: animationSize)
+                self.animationNode.frame = CGRect(origin: animationOrigin, size: animationSize)
+                self.animationNode.playOnce()
+            }
+        }
     }
 }
 

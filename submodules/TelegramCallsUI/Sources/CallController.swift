@@ -252,6 +252,19 @@ public final class CallController: ViewController {
             }
         }
         
+        if let controllerNode = self.controllerNode as? CallControllerNode {
+            controllerNode.sendCallRating = { [weak self] callId, isVideo, rating in
+                guard let strongSelf = self, !strongSelf.presentedCallRating else { return }
+                strongSelf.presentedCallRating = true
+                
+                if rating < 4 {
+                    strongSelf.push(callFeedbackController(sharedContext: strongSelf.sharedContext, account: strongSelf.account, callId: callId, rating: rating, userInitiated: false, isVideo: isVideo))
+                } else {
+                    let _ = rateCallAndSendLogs(engine: TelegramEngine(account: strongSelf.account), callId: callId, starsCount: rating, comment: "", userInitiated: false, includeLogs: false).start()
+                }
+            }
+        }
+        
         self.controllerNode.present = { [weak self] controller in
             if let strongSelf = self {
                 strongSelf.present(controller, in: .window(.root))

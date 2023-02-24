@@ -425,6 +425,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     private let statusNode: CallControllerStatusNode
     private let toastNode: CallControllerToastContainerNode
     private let buttonsNode: CallControllerButtonsNode
+    private let ratingNode: CallControllerRatingNode
     
     private let keyPreviewNode: CallControllerKeyPreviewNode
     private let keyPreviewNodeSize = CGSize(width: 304.0, height: 225.0)
@@ -461,6 +462,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     var endCall: (() -> Void)?
     var back: (() -> Void)?
     var presentCallRating: ((CallId, Bool) -> Void)?
+    var sendCallRating: ((CallId, Bool, Int) -> Void)?
     var callEnded: ((Bool) -> Void)?
     var dismissedInteractively: (() -> Void)?
     var present: ((ViewController) -> Void)?
@@ -532,6 +534,9 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         self.keyPreviewNode = CallControllerKeyPreviewNode(accountContext: self.call.context)
         self.keyPreviewNode.isHidden = true
         
+        self.ratingNode = CallControllerRatingNode(strings: self.presentationData.strings)
+        self.ratingNode.isHidden = true
+        
         super.init()
         
         self.containerNode.backgroundColor = .black
@@ -567,6 +572,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         self.containerNode.addSubnode(self.statusNode)
         self.containerNode.addSubnode(self.buttonsNode)
         self.containerNode.addSubnode(self.toastNode)
+        self.containerNode.addSubnode(self.ratingNode)
         self.containerNode.addSubnode(self.keyButtonNode)
         self.containerNode.addSubnode(self.backButtonArrowNode)
         self.containerNode.addSubnode(self.backButtonNode)
@@ -1237,7 +1243,13 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         if case let .terminated(id, _, reportRating) = callState.state, let callId = id {
             let presentRating = reportRating || self.forceReportRating
             if presentRating {
-                self.presentCallRating?(callId, self.call.isVideo)
+                let isVideo = self.call.isVideo
+                self.ratingNode.apply = { [weak self] rating in
+                    self?.sendCallRating?(callId, isVideo, rating)
+                }
+                self.ratingNode.isHidden = false
+                self.ratingNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.25)
+                self.ratingNode.layer.animateSpring(from: 0.75 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.25)
             }
             self.callEnded?(presentRating)
         }
@@ -1698,6 +1710,10 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         transition.updateFrame(node: self.toastNode, frame: CGRect(origin: CGPoint(x: 0.0, y: toastOriginY), size: CGSize(width: layout.size.width, height: toastHeight)))
         transition.updateFrame(node: self.buttonsNode, frame: CGRect(origin: CGPoint(x: 0.0, y: buttonsOriginY), size: CGSize(width: layout.size.width, height: buttonsHeight)))
         transition.updateAlpha(node: self.buttonsNode, alpha: overlayAlpha)
+        
+        let ratingNodeWidth = min(layout.size.width - 89.0, 304.0)
+        let ratingNodeHeight = self.ratingNode.updateLayout(constrainedWidth: ratingNodeWidth, transition: transition)
+        self.ratingNode.frame = CGRect(x: (layout.size.width - ratingNodeWidth) / 2.0, y: self.statusNode.frame.maxY + 50.0, width: ratingNodeWidth, height: ratingNodeHeight)
         
         let fullscreenVideoFrame = containerFullScreenFrame
         let previewVideoFrame = self.calculatePreviewVideoRect(layout: layout, navigationHeight: navigationBarHeight)
