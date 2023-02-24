@@ -443,11 +443,14 @@ final class LegacyCallControllerNode: ASDisplayNode, CallControllerNodeProtocol 
     
     @objc func keyPressed() {
         if self.keyPreviewNode == nil, let keyText = self.keyTextData?.1, let peer = self.peer {
-            let keyPreviewNode = CallControllerKeyPreviewNode(keyText: keyText, infoText: self.presentationData.strings.Call_EmojiDescription(EnginePeer(peer).compactDisplayTitle).string.replacingOccurrences(of: "%%", with: "%"), dismiss: { [weak self] in
+            let keyPreviewNode = CallControllerKeyPreviewNode(accountContext: self.call.context)
+            keyPreviewNode.keyText = keyText
+            keyPreviewNode.infoText = self.presentationData.strings.Call_EmojiDescription(EnginePeer(peer).compactDisplayTitle).string.replacingOccurrences(of: "%%", with: "%")
+            keyPreviewNode.dismiss = { [weak self] in
                 if let _ = self?.keyPreviewNode {
                     self?.backPressed()
                 }
-            })
+            }
             
             self.containerNode.insertSubnode(keyPreviewNode, belowSubnode: self.statusNode)
             self.keyPreviewNode = keyPreviewNode

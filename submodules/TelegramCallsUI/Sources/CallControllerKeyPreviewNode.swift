@@ -4,13 +4,16 @@ import Display
 import AsyncDisplayKit
 import SwiftSignalKit
 import LegacyComponents
+import AccountContext
 
 // TODO: Replace with localized strings
 private let titleText = "This call is end-to-end encrypted"
 private let buttonText = "OK"
 
 final class CallControllerKeyPreviewNode: ASDisplayNode {
-    private let keyTextNode: ASTextNode
+    private let keyContainerNode: ASDisplayNode
+    private let emojiNodes: [EmojiSlotNode]
+    
     private let titleTextNode: ASTextNode
     private let infoTextNode: ASTextNode
     
@@ -19,20 +22,39 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
     
     private let effectView: UIVisualEffectView
     
-    private let dismiss: () -> Void
+    private let accountContext: AccountContext
+    var dismiss: (() -> Void)?
     
-    init(keyText: String, infoText: String, dismiss: @escaping () -> Void) {
-        self.keyTextNode = ASTextNode()
-        self.keyTextNode.displaysAsynchronously = false
+    var keyText: String = "" {
+        didSet {
+            EmojiSlotNode.updateNodes(self.emojiNodes, key: self.keyText, accountContext: self.accountContext)
+            self.emojiNodes.forEach { self.keyContainerNode.addSubnode($0) }
+        }
+    }
+    
+    var infoText: String = "" {
+        didSet {
+            self.infoTextNode.attributedText = NSAttributedString(string: self.infoText, font: Font.regular(16.0), textColor: UIColor.white, paragraphAlignment: .center)
+        }
+    }
+    
+    init(accountContext: AccountContext) {
+        self.keyContainerNode = ASDisplayNode()
+        self.keyContainerNode.displaysAsynchronously = false
+        self.emojiNodes = (0 ..< 4).map { _ in EmojiSlotNode() }
+        
         self.titleTextNode = ASTextNode()
         self.titleTextNode.displaysAsynchronously = false
         self.titleTextNode.maximumNumberOfLines = 1
+        
         self.infoTextNode = ASTextNode()
         self.infoTextNode.displaysAsynchronously = false
         self.infoTextNode.maximumNumberOfLines = 2
+        
         self.buttonNode = HighlightableButtonNode()
         self.buttonSeparator = CALayer()
-        self.dismiss = dismiss
+        
+        self.accountContext = accountContext
         
         self.effectView = UIVisualEffectView()
         self.effectView.layer.masksToBounds = true
@@ -47,9 +69,7 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
         
         super.init()
         
-        self.keyTextNode.attributedText = NSAttributedString(string: keyText, attributes: [NSAttributedString.Key.font: Font.regular(40.0), NSAttributedString.Key.kern: 7.586 as NSNumber])
         self.titleTextNode.attributedText = NSAttributedString(string: titleText, font: Font.semibold(16.0), textColor: UIColor.white, paragraphAlignment: .center)
-        self.infoTextNode.attributedText = NSAttributedString(string: infoText, font: Font.regular(16.0), textColor: UIColor.white, paragraphAlignment: .center)
         self.buttonNode.setAttributedTitle(NSAttributedString(string: buttonText, font: Font.regular(20.0), textColor: UIColor.white, paragraphAlignment: .center), for: .normal)
         self.buttonNode.highligthedChanged = { [weak buttonNode] highlighted in
             if highlighted {
@@ -62,7 +82,7 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
         }
         
         self.view.addSubview(self.effectView)
-        self.addSubnode(self.keyTextNode)
+        self.addSubnode(self.keyContainerNode)
         self.addSubnode(self.titleTextNode)
         self.addSubnode(self.infoTextNode)
         self.addSubnode(self.buttonNode)
@@ -78,11 +98,16 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
     func updateLayout(size: CGSize, transition: ContainedViewLayoutTransition) {
         self.effectView.frame = CGRect(origin: CGPoint(), size: size)
         
-        let keyTextSize = self.keyTextNode.measure(CGSize(width: 300.0, height: 300.0))
-        transition.updateFrame(node: self.keyTextNode, frame: CGRect(origin: CGPoint(x: floor((size.width - keyTextSize.width) / 2) + 6.0, y: 20.0), size: keyTextSize))
+        let keyContainerSize = CGSize(width: 210.0, height: 48.0)
+        transition.updateFrame(node: self.keyContainerNode, frame: CGRect(origin: CGPoint(x: (size.width - keyContainerSize.width) / 2.0, y: 20.0), size: keyContainerSize))
+        
+        for (index, node) in self.emojiNodes.enumerated() {
+            let offsetX = CGFloat(index) * (48.0 + 6.0)
+            transition.updateFrame(node: node, frame: CGRect(x: offsetX, y: 0.0, width: 48.0, height: 48.0))
+        }
         
         let titleTextSize = self.titleTextNode.measure(CGSize(width: size.width - 32.0, height: CGFloat.greatestFiniteMagnitude))
-        transition.updateFrame(node: self.titleTextNode, frame: CGRect(origin: CGPoint(x: floor((size.width - titleTextSize.width) / 2.0), y: floor(self.keyTextNode.frame.maxY + 10.0)), size: titleTextSize))
+        transition.updateFrame(node: self.titleTextNode, frame: CGRect(origin: CGPoint(x: floor((size.width - titleTextSize.width) / 2.0), y: floor(self.keyContainerNode.frame.maxY + 10.0)), size: titleTextSize))
         
         let infoTextSize = self.infoTextNode.measure(CGSize(width: size.width - 32.0, height: CGFloat.greatestFiniteMagnitude))
         transition.updateFrame(node: self.infoTextNode, frame: CGRect(origin: CGPoint(x: floor((size.width - infoTextSize.width) / 2.0), y: floor(self.titleTextNode.frame.maxY + 10.0)), size: infoTextSize))
@@ -94,18 +119,20 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
     }
     
     func animateIn(from rect: CGRect, fromNode: ASDisplayNode, lightStyle: Bool) {
-        self.keyTextNode.layer.animatePosition(from: CGPoint(x: rect.midX, y: rect.midY), to: self.keyTextNode.layer.position, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
+        self.keyContainerNode.layer.animatePosition(from: CGPoint(x: rect.midX, y: rect.midY), to: self.keyContainerNode.layer.position, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
+        
         if let transitionView = fromNode.view.snapshotView(afterScreenUpdates: false) {
             self.view.addSubview(transitionView)
             transitionView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2, removeOnCompletion: false)
-            transitionView.layer.animatePosition(from: CGPoint(x: rect.midX, y: rect.midY), to: self.keyTextNode.layer.position, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false, completion: { [weak transitionView] _ in
+            transitionView.layer.animatePosition(from: CGPoint(x: rect.midX, y: rect.midY), to: self.keyContainerNode.layer.position, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false, completion: { [weak transitionView] _ in
                 transitionView?.removeFromSuperview()
             })
-            transitionView.layer.animateScale(from: 1.0, to: self.keyTextNode.frame.size.width / rect.size.width, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
+            transitionView.layer.animateScale(from: 1.0, to: self.keyContainerNode.frame.size.width / rect.size.width, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
         }
-        self.keyTextNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.15)
         
-        self.keyTextNode.layer.animateScale(from: rect.size.width / self.keyTextNode.frame.size.width, to: 1.0, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
+        self.keyContainerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.15)
+        self.keyContainerNode.layer.animateScale(from: rect.size.width / self.keyContainerNode.frame.size.width, to: 1.0, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
+        self.emojiNodes.forEach { $0.playOnce() }
         
         self.titleTextNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
         self.infoTextNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
@@ -119,10 +146,11 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
     }
     
     func animateOut(to rect: CGRect, toNode: ASDisplayNode, completion: @escaping () -> Void) {
-        self.keyTextNode.layer.animatePosition(from: self.keyTextNode.layer.position, to: CGPoint(x: rect.midX + 2.0, y: rect.midY), duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false, completion: { _ in
+        self.keyContainerNode.layer.animatePosition(from: self.keyContainerNode.layer.position, to: CGPoint(x: rect.midX, y: rect.midY), duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false, completion: { _ in
             completion()
         })
-        self.keyTextNode.layer.animateScale(from: 1.0, to: rect.size.width / (self.keyTextNode.frame.size.width - 2.0), duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
+        self.keyContainerNode.layer.animateScale(from: 1.0, to: rect.size.width / self.keyContainerNode.frame.size.width, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
+        self.emojiNodes.forEach { $0.stop() }
         
         self.titleTextNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false)
         self.infoTextNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false)
@@ -133,8 +161,8 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
         })
     }
     
-    @objc func buttonTapped() {
-        self.dismiss()
+    @objc private func buttonTapped() {
+        self.dismiss?()
     }
 }
 

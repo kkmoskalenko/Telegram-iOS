@@ -1,93 +1,134 @@
-import Foundation
-import UIKit
-import Display
+import AccountContext
+import AnimatedStickerNode
 import AsyncDisplayKit
-import CallsEmoji
+import Display
+import ShimmerEffect
+import SwiftSignalKit
+import TelegramAnimatedStickerNode
+import TelegramCore
 
-private let labelFont = Font.regular(22.0)
-private let animationNodesCount = 3
-
-private class EmojiSlotNode: ASDisplayNode {
-    var emoji: String = "" {
-        didSet {
-            self.node.attributedText = NSAttributedString(string: emoji, font: labelFont, textColor: .black)
-            let _ = self.node.updateLayout(CGSize(width: 100.0, height: 100.0))
+final class EmojiSlotNode: ASDisplayNode {
+    
+    enum Content {
+        case emoji(String)
+        case animatedEmoji(Account, StickerPackItem)
+    }
+    
+    static func updateNodes(_ nodes: [EmojiSlotNode], key: String, accountContext: AccountContext) {
+        let key = String(key.prefix(4))
+        let animatedKey = key.compactMap { emoji in
+            accountContext.animatedEmojiStickers[String(emoji)]?.first
+        }
+        
+        if animatedKey.count == key.count {
+            for (node, sticker) in zip(nodes, animatedKey) {
+                node.content = .animatedEmoji(accountContext.account, sticker)
+            }
+        } else {
+            for (node, emoji) in zip(nodes, key) {
+                node.content = .emoji(String(emoji))
+            }
         }
     }
     
-    private let maskNode: ASDisplayNode
-    private let containerNode: ASDisplayNode
-    private let node: ImmediateTextNode
-    private let animationNodes: [ImmediateTextNode]
+    var content: Content = .emoji("") {
+        didSet {
+            switch self.content {
+            case .emoji(let emoji):
+                self.textNode.isHidden = false
+                self.stickerNode.isHidden = true
+                self.stickerNode.visibility = false
+                self.placeholderNode.isHidden = true
+                
+                self.textNode.attributedText = NSAttributedString(string: emoji, font: Font.regular(41.0), textColor: .black, paragraphAlignment: .center)
+                let _ = self.textNode.updateLayout(CGSize(width: 100.0, height: 100.0))
+            case .animatedEmoji(let account, let stickerPackItem):
+                self.textNode.isHidden = true
+                self.stickerNode.isHidden = false
+                self.stickerNode.visibility = true
+                self.placeholderNode.isHidden = false
+                self.placeholderNode.alpha = 1.0
+                
+                let file = stickerPackItem.file
+                let source = AnimatedStickerResourceSource(account: account, resource: file.resource)
+                self.stickerFetchedDisposable.set(fetchedMediaResource(mediaBox: account.postbox.mediaBox, userLocation: .other, userContentType: .sticker, reference: MediaResourceReference.media(media: .standalone(media: file), resource: file.resource)).start())
+                
+                self.stickerNode.setup(source: source, width: 48 * Int(UIScreenScale), height: 48 * Int(UIScreenScale), playbackMode: .still(.start), mode: .direct(cachePathPrefix: nil))
+                self.stickerNode.autoplay = true
+                self.stickerNode.playToCompletionOnStop = true
+                self.stickerNode.started = { [weak self] in
+                    self?.placeholderNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2, completion: { [weak self] _ in self?.placeholderNode.isHidden = true })
+                }
+                
+                let placeholderSize = CGSize(width: 48.0, height: 48.0)
+                self.placeholderNode.update(backgroundColor: nil, foregroundColor: UIColor(white: 1.0, alpha: 0.2), shimmeringColor: UIColor(white: 1.0, alpha: 0.3), data: file.immediateThumbnailData, size: placeholderSize)
+            }
+        }
+    }
+    
+    func playOnce() {
+        if case .animatedEmoji = self.content {
+            self.stickerNode.playOnce()
+        }
+    }
+    
+    func stop() {
+        if case .animatedEmoji = self.content {
+            self.stickerNode.stop()
+        }
+    }
+    
+    private let textNode: ImmediateTextNode
+    private let stickerNode: AnimatedStickerNode
+    private let placeholderNode: StickerShimmerEffectNode
+    
+    private let stickerFetchedDisposable = MetaDisposable()
     
     override init() {
-        self.maskNode = ASDisplayNode()
-        self.containerNode = ASDisplayNode()
-        self.node = ImmediateTextNode()
-        self.animationNodes = (0 ..< animationNodesCount).map { _ in ImmediateTextNode() }
+        self.textNode = ImmediateTextNode()
+        self.stickerNode = DefaultAnimatedStickerNodeImpl()
+        self.placeholderNode = StickerShimmerEffectNode()
                     
         super.init()
         
-        let maskLayer = CAGradientLayer()
-        maskLayer.colors = [UIColor.clear.cgColor, UIColor.white.cgColor, UIColor.white.cgColor, UIColor.clear.cgColor]
-        maskLayer.locations = [0.0, 0.2, 0.8, 1.0]
-        maskLayer.startPoint = CGPoint(x: 0.5, y: 0.0)
-        maskLayer.endPoint = CGPoint(x: 0.5, y: 1.0)
-        self.maskNode.layer.mask = maskLayer
-        
-        self.addSubnode(self.maskNode)
-        self.maskNode.addSubnode(self.containerNode)
-        self.containerNode.addSubnode(self.node)
-        self.animationNodes.forEach({ self.containerNode.addSubnode($0) })
+        self.addSubnode(self.textNode)
+        self.addSubnode(self.stickerNode)
+        self.addSubnode(self.placeholderNode)
     }
     
-    func animateIn(duration: Double) {
-        for node in self.animationNodes {
-            node.attributedText = NSAttributedString(string: randomCallsEmoji(), font: labelFont, textColor: .black)
-            let _ = node.updateLayout(CGSize(width: 100.0, height: 100.0))
-        }
-        self.containerNode.layer.animatePosition(from: CGPoint(x: 0.0, y: -self.containerNode.frame.height + self.bounds.height), to: CGPoint(), duration: duration, delay: 0.1, timingFunction: kCAMediaTimingFunctionSpring, additive: true)
+    deinit {
+        self.stickerFetchedDisposable.dispose()
+    }
+    
+    override func measure(_ constrainedSize: CGSize) -> CGSize {
+        return CGSize(width: 48.0, height: 48.0)
     }
     
     override func layout() {
         super.layout()
         
-        let maskInset: CGFloat = 4.0
-        let maskFrame = self.bounds.insetBy(dx: 0.0, dy: -maskInset)
-        self.maskNode.frame = maskFrame
-        self.maskNode.layer.mask?.frame = CGRect(origin: CGPoint(), size: maskFrame.size)
-        
-        let spacing: CGFloat = 2.0
-        let containerSize = CGSize(width: self.bounds.width, height: self.bounds.height * CGFloat(animationNodesCount + 1) + spacing * CGFloat(animationNodesCount))
-        self.containerNode.frame = CGRect(origin: CGPoint(x: 0.0, y: maskInset), size: containerSize)
-        
-        self.node.frame = CGRect(origin: CGPoint(), size: self.bounds.size)
-        var offset: CGFloat = self.bounds.height + spacing
-        for node in self.animationNodes {
-            node.frame = CGRect(origin: CGPoint(x: 0.0, y: offset), size: self.bounds.size)
-            offset += self.bounds.height + spacing
-        }
+        self.textNode.frame = self.bounds
+        self.stickerNode.frame = self.bounds
+        self.stickerNode.updateLayout(size: self.bounds.size)
+        self.placeholderNode.frame = self.bounds
+        self.placeholderNode.updateAbsoluteRect(self.bounds, within: self.bounds.size)
     }
 }
 
 final class CallControllerKeyButton: HighlightableButtonNode {
+    private let accountContext: AccountContext
     private let containerNode: ASDisplayNode
     private let nodes: [EmojiSlotNode]
     
     var key: String = "" {
         didSet {
-            var index = 0
-            for emoji in self.key {
-                guard index < 4 else {
-                    return
-                }
-                self.nodes[index].emoji = String(emoji)
-                index += 1
-            }
+            guard self.key != oldValue else { return }
+            EmojiSlotNode.updateNodes(self.nodes, key: self.key, accountContext: self.accountContext)
         }
     }
     
-    init() {
+    init(accountContext: AccountContext) {
+        self.accountContext = accountContext
         self.containerNode = ASDisplayNode()
         self.nodes = (0 ..< 4).map { _ in EmojiSlotNode() }
        
@@ -100,16 +141,10 @@ final class CallControllerKeyButton: HighlightableButtonNode {
     func animateIn() {
         self.layoutIfNeeded()
         self.containerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
-        
-        var duration: Double = 0.75
-        for node in self.nodes {
-            node.animateIn(duration: duration)
-            duration += 0.3
-        }
     }
     
     override func measure(_ constrainedSize: CGSize) -> CGSize {
-        return CGSize(width: 114.0, height: 26.0)
+        return CGSize(width: 105.0, height: 24.0)
     }
     
     override func layout() {
@@ -117,9 +152,11 @@ final class CallControllerKeyButton: HighlightableButtonNode {
         
         self.containerNode.frame = self.bounds
         var index = 0
-        let nodeSize = CGSize(width: 29.0, height: self.bounds.size.height)
+        let nodeSize = CGSize(width: 48.0, height: 2.0 * self.bounds.size.height)
         for node in self.nodes {
-            node.frame = CGRect(origin: CGPoint(x: CGFloat(index) * nodeSize.width, y: 0.0), size: nodeSize)
+            node.anchorPoint = CGPoint(x: 0.0, y: 0.0)
+            node.transform = CATransform3DMakeScale(0.5, 0.5, 1.0)
+            node.frame = CGRect(origin: CGPoint(x: CGFloat(index) * (3.0 + nodeSize.width / 2.0), y: 0.0), size: nodeSize)
             index += 1
         }
         self.nodes.forEach({ self.containerNode.addSubnode($0) })
