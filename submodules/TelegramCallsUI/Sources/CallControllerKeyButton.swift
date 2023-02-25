@@ -15,17 +15,10 @@ final class EmojiSlotNode: ASDisplayNode {
     }
     
     static func updateNodes(_ nodes: [EmojiSlotNode], key: String, accountContext: AccountContext) {
-        let key = String(key.prefix(4))
-        let animatedKey = key.compactMap { emoji in
-            accountContext.animatedEmojiStickers[String(emoji)]?.first
-        }
-        
-        if animatedKey.count == key.count {
-            for (node, sticker) in zip(nodes, animatedKey) {
+        for (emoji, node) in zip(key, nodes) {
+            if let sticker = accountContext.animatedEmojiStickers[String(emoji)]?.first {
                 node.content = .animatedEmoji(accountContext.account, sticker)
-            }
-        } else {
-            for (node, emoji) in zip(nodes, key) {
+            } else {
                 node.content = .emoji(String(emoji))
             }
         }
@@ -41,7 +34,7 @@ final class EmojiSlotNode: ASDisplayNode {
                 self.placeholderNode.isHidden = true
                 
                 self.textNode.attributedText = NSAttributedString(string: emoji, font: Font.regular(41.0), textColor: .black, paragraphAlignment: .center)
-                let _ = self.textNode.updateLayout(CGSize(width: 100.0, height: 100.0))
+                let _ = self.textNode.updateLayout(CGSize(width: 48.0, height: 48.0))
             case .animatedEmoji(let account, let stickerPackItem):
                 self.textNode.isHidden = true
                 self.stickerNode.isHidden = false
@@ -108,6 +101,7 @@ final class EmojiSlotNode: ASDisplayNode {
         super.layout()
         
         self.textNode.frame = self.bounds
+        self.textNode.layoutIfNeeded()
         self.stickerNode.frame = self.bounds
         self.stickerNode.updateLayout(size: self.bounds.size)
         self.placeholderNode.frame = self.bounds

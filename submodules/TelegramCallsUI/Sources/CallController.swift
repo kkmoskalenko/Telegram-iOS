@@ -359,12 +359,16 @@ public final class CallController: ViewController {
     }
     
     override public func dismiss(completion: (() -> Void)? = nil) {
-        self.controllerNode.animateOut(completion: { [weak self] in
-            self?.didPlayPresentationAnimation = false
-            self?.presentingViewController?.dismiss(animated: false, completion: nil)
-            
+        if self.controllerNode is CallControllerNode {
             completion?()
-        })
+        } else {
+            self.controllerNode.animateOut(completion: { [weak self] in
+                self?.didPlayPresentationAnimation = false
+                self?.presentingViewController?.dismiss(animated: false, completion: nil)
+                
+                completion?()
+            })
+        }
     }
     
     @objc private func backPressed() {

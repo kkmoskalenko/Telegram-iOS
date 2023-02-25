@@ -6,6 +6,7 @@ import SwiftSignalKit
 import AppBundle
 import SemanticStatusNode
 import AnimationUI
+import TelegramPresentationData
 
 private let labelFont = Font.regular(13.0)
 
@@ -247,6 +248,7 @@ final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
                     drawOverMask = content.hasProgress || isFilled
                     
                     if content.hasProgress {
+                        fillColor = .white
                         ellipseRect = ellipseRect.insetBy(dx: 7.0, dy: 7.0)
                     }
                 case let .color(color):
@@ -408,5 +410,76 @@ final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
             transition.updateFrameAdditiveToCenter(node: self.textNode, frame: textFrame)
         }
         self.currentText = text
+    }
+}
+
+final class CallControllerCloseButtonNode: HighlightableButtonNode {
+    
+    private let effectView = UIVisualEffectView()
+    private let progressBar = CALayer()
+    private let maskingLayer = CALayer()
+    private let maskingProgressBar = CALayer()
+    
+    private var isAnimating: Bool = false
+    
+    init(strings: PresentationStrings) {
+        super.init(pointerStyle: nil)
+        
+        self.setTitle(strings.Common_Close, with: Font.semibold(17.0), with: .white, for: [])
+        
+        self.effectView.isUserInteractionEnabled = false
+        self.effectView.effect = UIBlurEffect(style: .light)
+        self.effectView.alpha = 0.85
+        
+        self.progressBar.anchorPoint = CGPoint(x: 1.0, y: 0.5)
+        self.progressBar.backgroundColor = UIColor.white.cgColor
+        self.progressBar.masksToBounds = true
+        self.progressBar.cornerRadius = 4.0
+        self.progressBar.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+        
+        self.maskingProgressBar.anchorPoint = CGPoint(x: 0.0, y: 0.5)
+        self.maskingProgressBar.backgroundColor = UIColor.black.cgColor
+        
+        self.maskingLayer.backgroundColor = UIColor.black.cgColor
+        self.layer.mask = self.maskingLayer
+        
+        self.view.insertSubview(self.effectView, at: 0)
+        self.view.layer.addSublayer(self.progressBar)
+        
+        self.layer.masksToBounds = true
+        self.layer.cornerRadius = 14.0
+        if #available(iOS 13.0, *) {
+            self.layer.cornerCurve = .continuous
+            self.progressBar.cornerCurve = .continuous
+        }
+    }
+    
+    func updateLayout(size: CGSize, transition: ContainedViewLayoutTransition) {
+        let bounds = CGRect(origin: .zero, size: size)
+        
+        transition.updateFrame(view: self.effectView, frame: bounds)
+        transition.updateFrame(layer: self.progressBar, frame: bounds)
+        transition.updateFrame(layer: self.maskingLayer, frame: bounds)
+        transition.updateFrame(layer: self.maskingProgressBar, frame: bounds)
+        
+        if let textSnapshot = self.titleNode.view.layer.snapshotContentTree() {
+            textSnapshot.compositingFilter = "xor"
+            self.maskingLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            self.maskingLayer.addSublayer(textSnapshot)
+            self.maskingLayer.addSublayer(self.maskingProgressBar)
+        }
+    }
+    
+    func animateProgress(duration: TimeInterval) {
+        guard !self.isAnimating else { return }
+        self.isAnimating = true
+        
+        let linear = CAMediaTimingFunctionName.linear.rawValue
+        self.progressBar.animateWidth(from: self.bounds.width, to: .zero, duration: duration, timingFunction: linear, removeOnCompletion: false) { [weak self] _ in
+            self?.progressBar.removeFromSuperlayer()
+        }
+        self.maskingProgressBar.animateWidth(from: .zero, to: self.bounds.width, duration: duration, timingFunction: linear, removeOnCompletion: false) { [weak self] _ in
+            self?.layer.mask = nil
+        }
     }
 }

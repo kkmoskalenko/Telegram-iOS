@@ -426,6 +426,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     private let toastNode: CallControllerToastContainerNode
     private let buttonsNode: CallControllerButtonsNode
     private let ratingNode: CallControllerRatingNode
+    private let closeButtonNode: CallControllerCloseButtonNode
     
     private let keyPreviewNode: CallControllerKeyPreviewNode
     private let keyPreviewNodeSize = CGSize(width: 304.0, height: 225.0)
@@ -537,6 +538,9 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         self.ratingNode = CallControllerRatingNode(strings: self.presentationData.strings)
         self.ratingNode.isHidden = true
         
+        self.closeButtonNode = CallControllerCloseButtonNode(strings: self.presentationData.strings)
+        self.closeButtonNode.isHidden = true
+        
         super.init()
         
         self.containerNode.backgroundColor = .black
@@ -571,6 +575,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         self.containerNode.addSubnode(self.keyPreviewNode)
         self.containerNode.addSubnode(self.statusNode)
         self.containerNode.addSubnode(self.buttonsNode)
+        self.containerNode.addSubnode(self.closeButtonNode)
         self.containerNode.addSubnode(self.toastNode)
         self.containerNode.addSubnode(self.ratingNode)
         self.containerNode.addSubnode(self.keyButtonNode)
@@ -724,6 +729,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         self.keyPreviewNode.dismiss = { [weak self] in self?.dismissKeyPreviewNode() }
         
         self.backButtonNode.addTarget(self, action: #selector(self.backPressed), forControlEvents: .touchUpInside)
+        self.closeButtonNode.addTarget(self, action: #selector(self.closePressed), forControlEvents: .touchUpInside)
         
         if shouldStayHiddenUntilConnection {
             self.containerNode.alpha = 0.0
@@ -1096,10 +1102,6 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 statusValue = .timer({ value, _ in
                     self.currentCallTimestamp == nil ? "00:00" : value
                 }, self.currentCallTimestamp ?? 0.0)
-                
-                self.dismissKeyPreviewNode()
-                self.avatarNode.playMuteAnimation()
-                self.updateBackground(to: .blueViolet)
             case let .terminated(_, reason, _):
                 if let reason = reason {
                     switch reason {
@@ -1143,10 +1145,9 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                         self.currentCallTimestamp == nil ? "00:00" : value
                     }, self.currentCallTimestamp ?? 0.0)
                 }
-            
-                self.dismissKeyPreviewNode()
-                self.avatarNode.playMuteAnimation()
-                self.updateBackground(to: .blueViolet)
+                DispatchQueue.main.async { [weak self] in
+                    self?.playCallEndedAnimation()
+                }
             case .ringing:
                 var text: String
                 if self.call.isVideo {
@@ -1475,6 +1476,37 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         }
     }
     
+    private var animatingCallEnded = false
+    private func playCallEndedAnimation() {
+        guard !self.animatingCallEnded else { return }
+        self.animatingCallEnded = true
+        
+        self.dismissKeyPreviewNode()
+        self.avatarNode.playMuteAnimation()
+        self.updateBackground(to: .blueViolet)
+        
+        self.closeButtonNode.isHidden = false
+        self.closeButtonNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 1.0 / 3.0, removeOnCompletion: false, completion: { [weak self] _ in
+            self?.closeButtonNode.animateProgress(duration: 5.0)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+                self?.animatingCallEnded = false
+                self?.closePressed()
+            }
+        })
+        
+        if let endButtonFrame = self.buttonsNode.endButtonFrame().flatMap({
+            self.buttonsNode.view.convert($0, to: self.view)
+        }) {
+            self.closeButtonNode.layer.animateFrame(from: endButtonFrame, to: self.closeButtonNode.frame, duration: 0.25)
+        }
+        
+        for node in [self.buttonsNode, self.backButtonNode, self.backButtonArrowNode, self.keyButtonNode] {
+            node.layer.animateAlpha(from: 1.0, to: 0.0, duration: 1.0 / 3.0, removeOnCompletion: false, completion: { [weak node] _ in
+                node?.removeFromSupernode()
+            })
+        }
+    }
+    
     func expandFromPipIfPossible() {
         if self.pictureInPictureTransitionFraction.isEqual(to: 1.0), let (layout, navigationHeight) = self.validLayout {
             self.pictureInPictureTransitionFraction = 0.0
@@ -1641,16 +1673,8 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         let toastCollapsedOriginY = self.pictureInPictureTransitionFraction > 0.0 ? layout.size.height : layout.size.height - max(layout.intrinsicInsets.bottom, 20.0) - toastHeight
         let toastOriginY = interpolate(from: toastCollapsedOriginY, to: defaultButtonsOriginY - toastSpacing - toastHeight, value: uiDisplayTransition)
         
-        var overlayAlpha: CGFloat = min(pinchTransitionAlpha, uiDisplayTransition)
-        var toastAlpha: CGFloat = min(pinchTransitionAlpha, pipTransitionAlpha)
-        
-        switch self.callState?.state {
-        case .terminated, .terminating:
-            overlayAlpha *= 0.5
-            toastAlpha *= 0.5
-        default:
-            break
-        }
+        let overlayAlpha: CGFloat = min(pinchTransitionAlpha, uiDisplayTransition)
+        let toastAlpha: CGFloat = min(pinchTransitionAlpha, pipTransitionAlpha)
         
         let containerFullScreenFrame = CGRect(origin: CGPoint(), size: layout.size)
         let containerPictureInPictureFrame = self.calculatePictureInPictureContainerRect(layout: layout, navigationHeight: navigationBarHeight)
@@ -1714,6 +1738,10 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         let ratingNodeWidth = min(layout.size.width - 89.0, 304.0)
         let ratingNodeHeight = self.ratingNode.updateLayout(constrainedWidth: ratingNodeWidth, transition: transition)
         self.ratingNode.frame = CGRect(x: (layout.size.width - ratingNodeWidth) / 2.0, y: self.statusNode.frame.maxY + 50.0, width: ratingNodeWidth, height: ratingNodeHeight)
+        
+        let closeButtonSize = CGSize(width: ratingNodeWidth, height: 50.0)
+        self.closeButtonNode.updateLayout(size: closeButtonSize, transition: transition)
+        transition.updateFrame(node: self.closeButtonNode, frame: CGRect(origin: CGPoint(x: (layout.size.width - closeButtonSize.width) / 2.0, y: buttonsOriginY + 3.0), size: closeButtonSize))
         
         let fullscreenVideoFrame = containerFullScreenFrame
         let previewVideoFrame = self.calculatePreviewVideoRect(layout: layout, navigationHeight: navigationBarHeight)
@@ -1879,6 +1907,12 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         } else {
             self.back?()
         }
+    }
+    
+    @objc private func closePressed() {
+        self.animateOut(completion: { [weak self] in
+            self?.dismissedInteractively?()
+        })
     }
     
     private func dismissKeyPreviewNode() {

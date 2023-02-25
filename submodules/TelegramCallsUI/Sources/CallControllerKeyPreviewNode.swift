@@ -27,8 +27,8 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
     
     var keyText: String = "" {
         didSet {
+            guard self.keyText != oldValue else { return }
             EmojiSlotNode.updateNodes(self.emojiNodes, key: self.keyText, accountContext: self.accountContext)
-            self.emojiNodes.forEach { self.keyContainerNode.addSubnode($0) }
         }
     }
     
@@ -87,6 +87,7 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
         self.addSubnode(self.infoTextNode)
         self.addSubnode(self.buttonNode)
         self.buttonNode.layer.addSublayer(self.buttonSeparator)
+        self.emojiNodes.forEach { self.keyContainerNode.addSubnode($0) }
     }
     
     override func didLoad() {
