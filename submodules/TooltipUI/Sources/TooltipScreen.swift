@@ -144,6 +144,26 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
             }
             maskLayer.frame = CGRect(origin: CGPoint(), size: arrowSize)
             self.arrowContainer.layer.mask = maskLayer
+        } else if case .calls(let light) = style {
+            self.effectView = UIVisualEffectView(effect: UIBlurEffect(style: light ? .light : .dark))
+            self.effectView?.alpha = light ? 0.85 : 1.0
+            self.backgroundContainerNode.clipsToBounds = true
+            self.backgroundContainerNode.cornerRadius = 14.0
+            if #available(iOS 13.0, *) {
+                self.backgroundContainerNode.layer.cornerCurve = .continuous
+            }
+            fontSize = 15.0
+            
+            self.arrowEffectView = UIVisualEffectView(effect: UIBlurEffect(style: light ? .light : .dark))
+            self.arrowEffectView?.alpha = light ? 0.85 : 1.0
+            self.arrowContainer.view.addSubview(self.arrowEffectView!)
+            
+            let maskLayer = CAShapeLayer()
+            if let path = try? svgPath("M85.882251,0 C79.5170552,0 73.4125613,2.52817247 68.9116882,7.02834833 L51.4264069,24.5109211 C46.7401154,29.1964866 39.1421356,29.1964866 34.4558441,24.5109211 L16.9705627,7.02834833 C12.4696897,2.52817247 6.36519576,0 0,0 L85.882251,0 ", scale: CGPoint(x: 0.333333, y: 0.333333), offset: CGPoint()) {
+                maskLayer.path = path.cgPath
+            }
+            maskLayer.frame = CGRect(origin: CGPoint(), size: arrowSize)
+            self.arrowContainer.layer.mask = maskLayer
         } else if case let .gradient(leftColor, rightColor) = style {
             self.gradientNode = ASDisplayNode()
             self.gradientNode?.setLayerBlock({
@@ -203,6 +223,9 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
             self.animatedStickerNode.automaticallyLoadFirstFrame = true
         case .info:
             self.animatedStickerNode.setup(source: AnimatedStickerNodeLocalFileSource(name: "anim_infotip"), width: Int(70 * UIScreenScale), height: Int(70 * UIScreenScale), playbackMode: .once, mode: .direct(cachePathPrefix: nil))
+            self.animatedStickerNode.automaticallyLoadFirstFrame = true
+        case .staticLock:
+            self.animatedStickerNode.setup(source: AnimatedStickerNodeLocalFileSource(name: "StaticLock"), width: Int(9 * UIScreenScale), height: Int(19 * UIScreenScale), playbackMode: .still(.start), mode: .direct(cachePathPrefix: nil))
             self.animatedStickerNode.automaticallyLoadFirstFrame = true
         }
         
@@ -297,11 +320,17 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
         
         let sideInset: CGFloat = self.inset + layout.safeInsets.left
         let bottomInset: CGFloat = 10.0
-        let contentInset: CGFloat = 11.0
+        let contentInset: CGFloat
         let contentVerticalInset: CGFloat = 11.0
         let animationSize: CGSize
         let animationInset: CGFloat
         let animationSpacing: CGFloat
+        
+        if case .calls = tooltipStyle {
+            contentInset = 16.0
+        } else {
+            contentInset = 11.0
+        }
         
         switch self.icon {
         case .none:
@@ -316,6 +345,10 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
             animationSize = CGSize(width: 32.0, height: 32.0)
             animationInset = 0.0
             animationSpacing = 8.0
+        case .staticLock:
+            animationSize = CGSize(width: 9.0, height: 19.0)
+            animationInset = 0.0
+            animationSpacing = 6.0
         }
         
         let containerWidth = max(100.0, min(layout.size.width, 614.0) - (sideInset + layout.safeInsets.left) * 2.0)
@@ -330,6 +363,8 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
                 backgroundHeight = max(animationSize.height, textSize.height) + contentVerticalInset * 2.0
             case .light:
                 backgroundHeight = max(28.0, max(animationSize.height, textSize.height) + 4.0 * 2.0)
+            case .calls:
+                backgroundHeight = max(38.0, max(animationSize.height, textSize.height) + 9.0 * 2.0)
         }
                     
         var invertArrow = false
@@ -412,7 +447,9 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
         
         transition.updateFrame(node: self.textNode, frame: CGRect(origin: CGPoint(x: contentInset + animationSize.width + animationSpacing, y: floor((backgroundHeight - textSize.height) / 2.0)), size: textSize))
         
-        transition.updateFrame(node: self.animatedStickerNode, frame: CGRect(origin: CGPoint(x: contentInset - animationInset, y: contentVerticalInset - animationInset), size: CGSize(width: animationSize.width + animationInset * 2.0, height: animationSize.height + animationInset * 2.0)))
+        var stickerOrigin = CGPoint(x: contentInset - animationInset, y: contentVerticalInset - animationInset)
+        if case .staticLock = self.icon { stickerOrigin.y -= 1.0 }
+        transition.updateFrame(node: self.animatedStickerNode, frame: CGRect(origin: stickerOrigin, size: CGSize(width: animationSize.width + animationInset * 2.0, height: animationSize.height + animationInset * 2.0)))
         self.animatedStickerNode.updateLayout(size: CGSize(width: animationSize.width + animationInset * 2.0, height: animationSize.height + animationInset * 2.0))
     }
     
@@ -472,7 +509,7 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
             animationDelay = 0.6
         case .info:
             animationDelay = 0.2
-        case .none:
+        case .none, .staticLock:
             animationDelay = 0.0
         }
         
@@ -527,6 +564,7 @@ public final class TooltipScreen: ViewController {
     public enum Icon {
         case info
         case chatListPress
+        case staticLock
     }
     
     public enum DismissOnTouch {
@@ -554,6 +592,7 @@ public final class TooltipScreen: ViewController {
         case `default`
         case light
         case gradient(UIColor, UIColor)
+        case calls(light: Bool)
     }
     
     private let account: Account
