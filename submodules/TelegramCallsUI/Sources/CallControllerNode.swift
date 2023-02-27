@@ -1211,6 +1211,12 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             switch callState.state {
             case .active, .connecting, .reconnecting:
                 break
+            case .terminating, .terminated:
+                if self.outgoingVideoNodeValue != nil {
+                    self.call.disableVideo()
+                    self.cancelScheduledUIHiding()
+                }
+                fallthrough
             default:
                 self.isUIHidden = false
             }
@@ -1521,21 +1527,22 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     private func calculatePreviewVideoRect(layout: ContainerViewLayout, navigationHeight: CGFloat) -> CGRect {
         let buttonsHeight: CGFloat = self.buttonsNode.bounds.height
         let toastHeight: CGFloat = self.toastNode.bounds.height
-        let toastInset = (toastHeight > 0.0 ? toastHeight + 22.0 : 0.0)
+        let toastInset = (toastHeight > 0.0 ? toastHeight + 16.0 : 0.0)
         
         var fullInsets = layout.insets(options: .statusBar)
     
         var cleanInsets = fullInsets
-        cleanInsets.bottom = max(layout.intrinsicInsets.bottom, 20.0) + toastInset
-        cleanInsets.left = 20.0
-        cleanInsets.right = 20.0
+        cleanInsets.bottom = max(layout.intrinsicInsets.bottom, 20.0) + max(toastInset, 16.0)
+        cleanInsets.left = 10.0
+        cleanInsets.right = 10.0
         
         fullInsets.top += 44.0 + 8.0
-        fullInsets.bottom = buttonsHeight + 22.0 + toastInset
-        fullInsets.left = 20.0
-        fullInsets.right = 20.0
+        fullInsets.bottom = buttonsHeight + 16.0 + toastInset
+        fullInsets.left = 10.0
+        fullInsets.right = 10.0
         
         var insets: UIEdgeInsets = self.isUIHidden ? cleanInsets : fullInsets
+        let maxPreviewVideoSide: CGFloat = self.isUIHidden ? 140.0 : 240.0
         
         let expandedInset: CGFloat = 16.0
         
@@ -1544,19 +1551,19 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         insets.left = interpolate(from: expandedInset, to: insets.left, value: 1.0 - self.pictureInPictureTransitionFraction)
         insets.right = interpolate(from: expandedInset, to: insets.right, value: 1.0 - self.pictureInPictureTransitionFraction)
         
-        let previewVideoSide = interpolate(from: 300.0, to: 150.0, value: 1.0 - self.pictureInPictureTransitionFraction)
+        let previewVideoSide = interpolate(from: 300.0, to: maxPreviewVideoSide, value: 1.0 - self.pictureInPictureTransitionFraction)
         var previewVideoSize = layout.size.aspectFitted(CGSize(width: previewVideoSide, height: previewVideoSide))
         previewVideoSize = CGSize(width: 30.0, height: 45.0).aspectFitted(previewVideoSize)
         if let minimizedVideoNode = self.minimizedVideoNode {
             var aspect = minimizedVideoNode.currentAspect
             var rotationCount = 0
             if minimizedVideoNode === self.outgoingVideoNodeValue {
-                aspect = 3.0 / 4.0
+                aspect = 23.0 / 40.0
             } else {
                 if aspect < 1.0 {
-                    aspect = 3.0 / 4.0
+                    aspect = 23.0 / 40.0
                 } else {
-                    aspect = 4.0 / 3.0
+                    aspect = 40.0 / 23.0
                 }
                 
                 switch minimizedVideoNode.currentOrientation {
@@ -1764,6 +1771,9 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             }
         }
         
+        // FIXME: Using private API to match the transition from the mock-up
+        let displayCornerRadius = UIScreen.main.value(forKey: "_displayCornerRadius") as? CGFloat
+        
         if let expandedVideoNode = self.expandedVideoNode {
             transition.updateAlpha(node: expandedVideoNode, alpha: 1.0)
             var expandedVideoTransition = transition
@@ -1796,12 +1806,19 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                     }
                 }
             }
+            
+            if expandedVideoNode === self.incomingVideoNodeValue && !expandedVideoTransition.isAnimated {
+                expandedVideoNode.layer.animate(from: (avatarSize.width / 2.0) as NSNumber, to: (displayCornerRadius ?? 0.0) as NSNumber, keyPath: "cornerRadius", timingFunction: CAMediaTimingFunctionName.easeInEaseOut.rawValue, duration: 0.3)
+                expandedVideoNode.layer.animateFrame(from: self.avatarNode.frame, to: fullscreenVideoFrame, duration: 0.3)
+                expandedVideoNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
+            }
         } else {
             if let removedExpandedVideoNodeValue = self.removedExpandedVideoNodeValue {
                 self.removedExpandedVideoNodeValue = nil
                 
                 if transition.isAnimated {
-                    removedExpandedVideoNodeValue.layer.animateScale(from: 1.0, to: 0.1, duration: 0.3, removeOnCompletion: false)
+                    removedExpandedVideoNodeValue.layer.animate(from: (displayCornerRadius ?? 0.0) as NSNumber, to: (avatarSize.width / 2.0) as NSNumber, keyPath: "cornerRadius", timingFunction: CAMediaTimingFunctionName.easeInEaseOut.rawValue, duration: 0.3, removeOnCompletion: false)
+                    removedExpandedVideoNodeValue.layer.animateFrame(from: removedExpandedVideoNodeValue.frame, to: self.avatarNode.frame, duration: 0.3, removeOnCompletion: false)
                     removedExpandedVideoNodeValue.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false, completion: { [weak removedExpandedVideoNodeValue] _ in
                         removedExpandedVideoNodeValue?.removeFromSupernode()
                     })

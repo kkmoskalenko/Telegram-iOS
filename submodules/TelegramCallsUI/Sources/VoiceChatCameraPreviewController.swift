@@ -179,9 +179,9 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
         
         self.titleNode = ASTextNode()
         self.titleNode.attributedText = NSAttributedString(string: title, font: Font.bold(17.0), textColor: UIColor(rgb: 0xffffff))
-                
-        self.doneButton = SolidRoundedButtonNode(theme: SolidRoundedButtonTheme(backgroundColor: UIColor(rgb: 0xffffff), foregroundColor: UIColor(rgb: 0x4f5352)), font: .bold, height: 48.0, cornerRadius: 24.0, gloss: false)
-        self.doneButton.title = self.presentationData.strings.VoiceChat_VideoPreviewContinue
+        
+        // TODO: Replace with a localized string
+        self.doneButton = SolidRoundedButtonNode(title: "Start Video", theme: SolidRoundedButtonTheme(backgroundColor: UIColor(rgb: 0xffffff), foregroundColor: UIColor(rgb: 0x4f5352)), font: .bold, fontSize: 17.0, height: 50.0, cornerRadius: 14.0, gloss: false)
         
         if #available(iOS 12.0, *) {
             let broadcastPickerView = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 50, height: 52.0))
@@ -493,13 +493,14 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
 
         let buttonInset: CGFloat = 16.0
         let buttonMaxWidth: CGFloat = 360.0
+        let buttonBottomOffset: CGFloat = 14.0 + layout.safeInsets.bottom
         
         let buttonWidth = min(buttonMaxWidth, contentFrame.width - buttonInset * 2.0)
         let doneButtonHeight = self.doneButton.updateLayout(width: buttonWidth, transition: transition)
-        transition.updateFrame(node: self.doneButton, frame: CGRect(x: floorToScreenPixels((contentFrame.width - buttonWidth) / 2.0), y: previewFrame.maxY - doneButtonHeight - buttonInset, width: buttonWidth, height: doneButtonHeight))
+        transition.updateFrame(node: self.doneButton, frame: CGRect(x: floorToScreenPixels((contentFrame.width - buttonWidth) / 2.0), y: previewFrame.maxY - doneButtonHeight - buttonBottomOffset, width: buttonWidth, height: doneButtonHeight))
         self.broadcastPickerView?.frame = self.doneButton.frame
         
-        let wheelFrame = CGRect(origin: CGPoint(x: 16.0 + previewFrame.minX, y: previewFrame.maxY - doneButtonHeight - buttonInset - 36.0 - 20.0), size: CGSize(width: previewFrame.width - 32.0, height: 36.0))
+        let wheelFrame = CGRect(origin: CGPoint(x: 16.0 + previewFrame.minX, y: previewFrame.maxY - doneButtonHeight - buttonBottomOffset - 36.0 - 20.0), size: CGSize(width: previewFrame.width - 32.0, height: 36.0))
         self.wheelNode.updateLayout(size: wheelFrame.size, transition: transition)
         transition.updateFrame(node: self.wheelNode, frame: wheelFrame)
         
@@ -507,8 +508,7 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
     }
 }
 
-private let textFont = Font.with(size: 14.0, design: .camera, weight: .regular)
-private let selectedTextFont = Font.with(size: 14.0, design: .camera, weight: .semibold)
+private let textFont = Font.with(size: 14.0, design: .camera, weight: .semibold)
 
 private class WheelControlNode: ASDisplayNode, UIGestureRecognizerDelegate {
     struct Item: Equatable {
@@ -578,14 +578,7 @@ private class WheelControlNode: ASDisplayNode, UIGestureRecognizerDelegate {
             itemNode.accessibilityLabel = item.title
             itemNode.accessibilityTraits = [.button]
             itemNode.hitTestSlop = UIEdgeInsets(top: -10.0, left: -5.0, bottom: -10.0, right: -5.0)
-            itemNode.setTitle(item.title.uppercased(), with: textFont, with: .white, for: .normal)
-            itemNode.titleNode.shadowColor = UIColor.black.cgColor
-            itemNode.titleNode.shadowOffset = CGSize()
-            itemNode.titleNode.layer.shadowRadius = 2.0
-            itemNode.titleNode.layer.shadowOpacity = 0.3
-            itemNode.titleNode.layer.masksToBounds = false
-            itemNode.titleNode.layer.shouldRasterize = true
-            itemNode.titleNode.layer.rasterizationScale = UIScreen.main.scale
+            itemNode.setTitle(item.title.uppercased(), with: textFont, with: .white.withAlphaComponent(0.5), for: .normal)
             return itemNode
         }
         
@@ -632,7 +625,7 @@ private class WheelControlNode: ASDisplayNode, UIGestureRecognizerDelegate {
                 if itemNode.isSelected != isSelected {
                     itemNode.isSelected = isSelected
                     let title = itemNode.attributedTitle(for: .normal)?.string ?? ""
-                    itemNode.setTitle(title, with: isSelected ? selectedTextFont : textFont, with: isSelected ? UIColor(rgb: 0xffd60a) : .white, for: .normal)
+                    itemNode.setTitle(title, with: textFont, with: .white.withAlphaComponent(isSelected ? 1.0 : 0.5), for: .normal)
                     if isSelected {
                         itemNode.accessibilityTraits.insert(.selected)
                     } else {
