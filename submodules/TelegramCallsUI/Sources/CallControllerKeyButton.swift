@@ -134,7 +134,12 @@ final class CallControllerKeyButton: HighlightableButtonNode {
         
     func animateIn() {
         self.layoutIfNeeded()
-        self.containerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
+        
+        self.containerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
+        for (index, node) in self.nodes.reversed().enumerated() {
+            let newPosition = node.layer.position.offsetBy(dx: -6.0 * CGFloat(index), dy: 0.0)
+            node.layer.animatePosition(from: newPosition, to: node.layer.position, duration: 0.3)
+        }
     }
     
     override func measure(_ constrainedSize: CGSize) -> CGSize {

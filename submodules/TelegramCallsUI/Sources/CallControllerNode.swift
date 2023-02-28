@@ -518,10 +518,12 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         self.dimNode.backgroundColor = UIColor(white: 0.0, alpha: 0.3)
         
         self.backButtonArrowNode = ASImageNode()
+        self.backButtonArrowNode.isHidden = true
         self.backButtonArrowNode.displayWithoutProcessing = true
         self.backButtonArrowNode.displaysAsynchronously = false
         self.backButtonArrowNode.image = NavigationBarTheme.generateBackArrowImage(color: .white)
         self.backButtonNode = HighlightableButtonNode()
+        self.backButtonNode.isHidden = true
         
         self.statusNode = CallControllerStatusNode()
         
@@ -532,6 +534,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         self.weakNetworkToastNode.isHidden = true
         
         self.keyButtonNode = CallControllerKeyButton(accountContext: self.call.context)
+        self.keyButtonNode.isHidden = true
         self.keyButtonNode.accessibilityElementsHidden = false
         
         self.keyPreviewNode = CallControllerKeyPreviewNode(accountContext: self.call.context)
@@ -1170,12 +1173,12 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                     
                     let keyTextSize = self.keyButtonNode.measure(CGSize(width: 200.0, height: 200.0))
                     self.keyButtonNode.frame = CGRect(origin: self.keyButtonNode.frame.origin, size: keyTextSize)
-                    self.keyButtonNode.animateIn()
                     
                     if let (layout, navigationBarHeight) = self.validLayout {
                         self.containerLayoutUpdated(layout, navigationBarHeight: navigationBarHeight, transition: .immediate)
                     }
                     
+                    self.playCallStartedAnimation()
                     self.displayEncryptionKeyTooltip()
                     self.avatarNode.playConnectedAnimation()
                 }
@@ -1464,6 +1467,31 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         
         UIView.transition(with: self.backgroundNode.view, duration: 1.0 / 3.0, options: [.curveEaseInOut, .transitionCrossDissolve]) { [weak self] in
             self?.backgroundNode.updateColors(colors: gradient.colors)
+        }
+    }
+    
+    private var animatingCallStarted = false
+    private func playCallStartedAnimation() {
+        guard !self.animatingCallStarted else { return }
+        self.animatingCallStarted = true
+        
+        if self.keyButtonNode.isHidden {
+            self.keyButtonNode.isHidden = false
+            self.keyButtonNode.animateIn()
+        }
+        
+        if self.backButtonNode.isHidden {
+            self.backButtonNode.isHidden = false
+            let position = self.backButtonNode.layer.position
+            self.backButtonNode.layer.animatePosition(from: position.offsetBy(dx: 15.0, dy: 0.0), to: position, duration: 0.3)
+            self.backButtonNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
+        }
+        
+        if self.backButtonArrowNode.isHidden {
+            self.backButtonArrowNode.isHidden = false
+            let position = self.backButtonArrowNode.layer.position
+            self.backButtonArrowNode.layer.animatePosition(from: position.offsetBy(dx: 10.0, dy: 0.0), to: position, duration: 0.3)
+            self.backButtonArrowNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
         }
     }
     
