@@ -34,7 +34,7 @@ final class LegacyCallControllerNode: ASDisplayNode, CallControllerNodeProtocol 
     private let backButtonNode: HighlightableButtonNode
     private let statusNode: LegacyCallControllerStatusNode
     private let buttonsNode: LegacyCallControllerButtonsNode
-    private var keyPreviewNode: CallControllerKeyPreviewNode?
+    private var keyPreviewNode: LegacyCallControllerKeyPreviewNode?
     
     private var debugNode: CallDebugNode?
     
@@ -443,14 +443,11 @@ final class LegacyCallControllerNode: ASDisplayNode, CallControllerNodeProtocol 
     
     @objc func keyPressed() {
         if self.keyPreviewNode == nil, let keyText = self.keyTextData?.1, let peer = self.peer {
-            let keyPreviewNode = CallControllerKeyPreviewNode(accountContext: self.call.context)
-            keyPreviewNode.keyText = keyText
-            keyPreviewNode.infoText = self.presentationData.strings.Call_EmojiDescription(EnginePeer(peer).compactDisplayTitle).string.replacingOccurrences(of: "%%", with: "%")
-            keyPreviewNode.dismiss = { [weak self] in
+            let keyPreviewNode = LegacyCallControllerKeyPreviewNode(keyText: keyText, infoText: self.presentationData.strings.Call_EmojiDescription(EnginePeer(peer).compactDisplayTitle).string.replacingOccurrences(of: "%%", with: "%"), dismiss: { [weak self] in
                 if let _ = self?.keyPreviewNode {
                     self?.backPressed()
                 }
-            }
+            })
             
             self.containerNode.insertSubnode(keyPreviewNode, belowSubnode: self.statusNode)
             self.keyPreviewNode = keyPreviewNode
@@ -459,7 +456,7 @@ final class LegacyCallControllerNode: ASDisplayNode, CallControllerNodeProtocol 
                 keyPreviewNode.updateLayout(size: validLayout.size, transition: .immediate)
                 
                 self.keyButtonNode.isHidden = true
-                keyPreviewNode.animateIn(from: self.keyButtonNode.frame, fromNode: self.keyButtonNode, lightStyle: false)
+                keyPreviewNode.animateIn(from: self.keyButtonNode.frame, fromNode: self.keyButtonNode)
             }
         }
     }
