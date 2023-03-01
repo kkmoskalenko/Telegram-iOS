@@ -491,8 +491,6 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     
     private var currentRequestedAspect: CGFloat?
     
-    private var currentCallTimestamp: Double?
-    
     init(sharedContext: SharedAccountContext, account: Account, presentationData: PresentationData, statusBar: StatusBar, debugInfo: Signal<(String, String), NoError>, shouldStayHiddenUntilConnection: Bool = false, easyDebugAccess: Bool, call: PresentationCall) {
         self.sharedContext = sharedContext
         self.account = account
@@ -512,10 +510,10 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         
         self.avatarNode = CallControllerAvatarNode(sharedContext: sharedContext, account: account, presentationData: presentationData, call: call)
         self.backgroundNode = GradientBackgroundNode(colors: self.currentBackground.colors, adjustSaturation: false)
+        
         self.dimNode = ASImageNode()
         self.dimNode.contentMode = .scaleToFill
         self.dimNode.isUserInteractionEnabled = false
-        self.dimNode.backgroundColor = UIColor(white: 0.0, alpha: 0.3)
         
         self.backButtonArrowNode = ASImageNode()
         self.backButtonArrowNode.isHidden = true
@@ -578,11 +576,11 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         self.containerNode.addSubnode(self.videoContainerNode)
         self.containerNode.addSubnode(self.dimNode)
         self.containerNode.addSubnode(self.statusNode)
+        self.containerNode.addSubnode(self.weakNetworkToastNode)
         self.containerNode.addSubnode(self.keyPreviewNode)
         self.containerNode.addSubnode(self.buttonsNode)
         self.containerNode.addSubnode(self.closeButtonNode)
         self.containerNode.addSubnode(self.toastNode)
-        self.containerNode.addSubnode(self.weakNetworkToastNode)
         self.containerNode.addSubnode(self.ratingNode)
         self.containerNode.addSubnode(self.keyButtonNode)
         self.containerNode.addSubnode(self.backButtonArrowNode)
@@ -830,16 +828,14 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     func updatePeer(accountPeer: Peer, peer: Peer, hasOther: Bool) {
         if !arePeersEqual(self.peer, peer) {
             self.peer = peer
-            
             self.avatarNode.setPeer(peer)
-            self.dimNode.isHidden = true
             
             self.toastNode.title = EnginePeer(peer).compactDisplayTitle
             self.statusNode.title = EnginePeer(peer).displayTitle(strings: self.presentationData.strings, displayOrder: self.presentationData.nameDisplayOrder)
             self.keyPreviewNode.infoText = self.presentationData.strings.Call_EmojiDescription(EnginePeer(peer).compactDisplayTitle).string.replacingOccurrences(of: "%%", with: "%")
             
             if hasOther {
-                self.statusNode.subtitle = self.presentationData.strings.Call_AnsweringWithAccount(EnginePeer(accountPeer).displayTitle(strings: self.presentationData.strings, displayOrder: self.presentationData.nameDisplayOrder)).string
+                // self.statusNode.subtitle = self.presentationData.strings.Call_AnsweringWithAccount(EnginePeer(accountPeer).displayTitle(strings: self.presentationData.strings, displayOrder: self.presentationData.nameDisplayOrder)).string
                 
                 if let callState = self.callState {
                     self.updateCallState(callState)
@@ -878,9 +874,8 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     
     func updateCallState(_ callState: PresentationCallState) {
         self.callState = callState
-        
+
         let statusValue: CallControllerStatusValue
-        var statusReception: Int32?
         
         switch callState.remoteVideoState {
         case .active, .paused:
@@ -1087,128 +1082,109 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         }
                 
         switch callState.state {
-            case .waiting, .connecting:
-                statusValue = .text(string: self.presentationData.strings.Call_StatusConnecting, displayLogo: false)
-            case let .requesting(ringing):
-                if ringing {
-                    statusValue = .text(string: self.presentationData.strings.Call_StatusRinging, displayLogo: false)
-                } else {
-                    statusValue = .text(string: self.presentationData.strings.Call_StatusRequesting, displayLogo: false)
+        case .waiting, .connecting:
+            statusValue = .text(string: self.presentationData.strings.Call_StatusConnecting)
+        case let .requesting(ringing):
+            if ringing {
+                statusValue = .text(string: self.presentationData.strings.Call_StatusRinging)
+            } else {
+                statusValue = .text(string: self.presentationData.strings.Call_StatusRequesting)
+            }
+        case .terminating:
+            self.statusNode.title = self.presentationData.strings.Call_StatusEnded
+            statusValue = .ended
+        case let .terminated(_, reason, _):
+            statusValue = .ended
+            Queue.mainQueue().async { [weak self] in
+                self?.playCallEndedAnimation()
+            }
+            
+            if let reason = reason {
+                switch reason {
+                case let .ended(type):
+                    switch type {
+                    case .busy:
+                        self.statusNode.title = self.presentationData.strings.Call_StatusBusy
+                    case .hungUp, .missed:
+                        self.statusNode.title = self.presentationData.strings.Call_StatusEnded
+                    }
+                case let .error(error):
+                    switch error {
+                    case let .notSupportedByPeer(isVideo):
+                        if !self.displayedVersionOutdatedAlert, let peer = self.peer {
+                            self.displayedVersionOutdatedAlert = true
+                            
+                            let text: String
+                            if isVideo {
+                                text = self.presentationData.strings.Call_ParticipantVideoVersionOutdatedError(EnginePeer(peer).displayTitle(strings: self.presentationData.strings, displayOrder: self.presentationData.nameDisplayOrder)).string
+                            } else {
+                                text = self.presentationData.strings.Call_ParticipantVersionOutdatedError(EnginePeer(peer).displayTitle(strings: self.presentationData.strings, displayOrder: self.presentationData.nameDisplayOrder)).string
+                            }
+                            
+                            self.present?(textAlertController(sharedContext: self.sharedContext, title: nil, text: text, actions: [TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_OK, action: {
+                            })]))
+                        }
+                    default:
+                        break
+                    }
+                    
+                    self.statusNode.title = self.presentationData.strings.Call_StatusFailed
                 }
-            case .terminating:
+            } else {
                 self.statusNode.title = self.presentationData.strings.Call_StatusEnded
-                statusReception = .min
-                statusValue = .timer({ value, _ in
-                    self.currentCallTimestamp == nil ? "00:00" : value
-                }, self.currentCallTimestamp ?? 0.0)
-            case let .terminated(_, reason, _):
-                if let reason = reason {
-                    switch reason {
-                        case let .ended(type):
-                            switch type {
-                                case .busy:
-                                    statusValue = .text(string: self.presentationData.strings.Call_StatusBusy, displayLogo: false)
-                                case .hungUp, .missed:
-                                    self.statusNode.title = self.presentationData.strings.Call_StatusEnded
-                                    statusReception = .min
-                                    statusValue = .timer({ value, _ in
-                                        self.currentCallTimestamp == nil ? "00:00" : value
-                                    }, self.currentCallTimestamp ?? 0.0)
-                            }
-                        case let .error(error):
-                            let text = self.presentationData.strings.Call_StatusFailed
-                            switch error {
-                            case let .notSupportedByPeer(isVideo):
-                                if !self.displayedVersionOutdatedAlert, let peer = self.peer {
-                                    self.displayedVersionOutdatedAlert = true
-                                    
-                                    let text: String
-                                    if isVideo {
-                                        text = self.presentationData.strings.Call_ParticipantVideoVersionOutdatedError(EnginePeer(peer).displayTitle(strings: self.presentationData.strings, displayOrder: self.presentationData.nameDisplayOrder)).string
-                                    } else {
-                                        text = self.presentationData.strings.Call_ParticipantVersionOutdatedError(EnginePeer(peer).displayTitle(strings: self.presentationData.strings, displayOrder: self.presentationData.nameDisplayOrder)).string
-                                    }
-                                    
-                                    self.present?(textAlertController(sharedContext: self.sharedContext, title: nil, text: text, actions: [TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_OK, action: {
-                                    })]))
-                                }
-                            default:
-                                break
-                            }
-                            statusValue = .text(string: text, displayLogo: false)
-                    }
-                } else {
-                    self.statusNode.title = self.presentationData.strings.Call_StatusEnded
-                    statusReception = .min
-                    statusValue = .timer({ value, _ in
-                        self.currentCallTimestamp == nil ? "00:00" : value
-                    }, self.currentCallTimestamp ?? 0.0)
-                }
-                Queue.mainQueue().async { [weak self] in
-                    self?.playCallEndedAnimation()
-                }
-            case .ringing:
-                var text: String
-                if self.call.isVideo {
-                    text = self.presentationData.strings.Call_IncomingVideoCall
-                } else {
-                    text = self.presentationData.strings.Call_IncomingVoiceCall
-                }
-                if !self.statusNode.subtitle.isEmpty {
-                    text += "\n\(self.statusNode.subtitle)"
-                }
-                statusValue = .text(string: text, displayLogo: false)
-            case .active(let timestamp, let reception, let keyVisualHash), .reconnecting(let timestamp, let reception, let keyVisualHash):
-                let strings = self.presentationData.strings
-                var isReconnecting = false
-                if case .reconnecting = callState.state {
-                    isReconnecting = true
-                }
-                if self.keyTextData?.0 != keyVisualHash {
-                    let text = stringForEmojiHashOfData(keyVisualHash, 4)!
-                    self.keyTextData = (keyVisualHash, text)
-
-                    self.keyButtonNode.key = text
-                    self.keyPreviewNode.keyText = text
-                    
-                    let keyTextSize = self.keyButtonNode.measure(CGSize(width: 200.0, height: 200.0))
-                    self.keyButtonNode.frame = CGRect(origin: self.keyButtonNode.frame.origin, size: keyTextSize)
-                    
-                    if let (layout, navigationBarHeight) = self.validLayout {
-                        self.containerLayoutUpdated(layout, navigationBarHeight: navigationBarHeight, transition: .immediate)
-                    }
-                    
-                    self.playCallStartedAnimation()
-                    self.displayEncryptionKeyTooltip()
-                    self.avatarNode.playConnectedAnimation()
+            }
+        case .ringing:
+            let text: String
+            if self.call.isVideo {
+                text = self.presentationData.strings.Call_IncomingVideoCall
+            } else {
+                text = self.presentationData.strings.Call_IncomingVoiceCall
+            }
+            /*
+            if !self.statusNode.subtitle.isEmpty {
+                text += "\n\(self.statusNode.subtitle)"
+            }
+            */
+            statusValue = .text(string: text)
+        case .active(let timestamp, let reception, let keyVisualHash), .reconnecting(let timestamp, let reception, let keyVisualHash):
+            if self.keyTextData?.0 != keyVisualHash {
+                let text = stringForEmojiHashOfData(keyVisualHash, 4)!
+                self.keyTextData = (keyVisualHash, text)
+                
+                self.keyButtonNode.key = text
+                self.keyPreviewNode.keyText = text
+                
+                let keyTextSize = self.keyButtonNode.measure(CGSize(width: 200.0, height: 200.0))
+                self.keyButtonNode.frame = CGRect(origin: self.keyButtonNode.frame.origin, size: keyTextSize)
+                
+                if let (layout, navigationBarHeight) = self.validLayout {
+                    self.containerLayoutUpdated(layout, navigationBarHeight: navigationBarHeight, transition: .immediate)
                 }
                 
-                Queue.mainQueue().async { [weak self] in
-                    self?.playReceptionChangedAnimation(reception: reception ?? 0)
-                }
-                self.currentCallTimestamp = timestamp
-                
-                statusValue = .timer({ value, measure in
-                    if isReconnecting || (self.outgoingVideoViewRequested && value == "00:00" && !measure) {
-                        return strings.Call_StatusConnecting
-                    } else {
-                        return value
-                    }
-                }, timestamp)
-                if case .active = callState.state {
-                    statusReception = reception
-                }
+                self.playCallStartedAnimation()
+                self.displayEncryptionKeyTooltip()
+                self.avatarNode.playConnectedAnimation()
+            }
+            
+            Queue.mainQueue().async { [weak self] in
+                self?.playReceptionChangedAnimation(reception: reception ?? 0)
+            }
+            
+            if case .reconnecting = callState.state {
+                statusValue = .text(string: self.presentationData.strings.Call_StatusConnecting)
+            } else {
+                statusValue = .timer(timestamp: timestamp, reception: reception ?? 0)
+            }
         }
         if self.shouldStayHiddenUntilConnection {
             switch callState.state {
-                case .connecting, .active:
-                    self.containerNode.alpha = 1.0
-                default:
-                    break
+            case .connecting, .active:
+                self.containerNode.alpha = 1.0
+            default:
+                break
             }
         }
         self.statusNode.status = statusValue
-        self.statusNode.reception = statusReception
         
         if let callState = self.callState {
             switch callState.state {
@@ -1286,26 +1262,16 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     }
     
     private func updateDimVisibility(transition: ContainedViewLayoutTransition = .animated(duration: 0.3, curve: .easeInOut)) {
-        guard let callState = self.callState else {
-            return
-        }
-        
-        var visible = true
-        if case .active = callState.state, self.hasVideo {
-            visible = false
-        }
-        
+        let visible = !self.hasVideo || self.isUIHidden
         let currentVisible = self.dimNode.image == nil
+        
         if visible != currentVisible {
-            let color = visible ? UIColor(rgb: 0x000000, alpha: 0.3) : UIColor.clear
             let image: UIImage? = visible ? nil : generateGradientImage(size: CGSize(width: 1.0, height: 640.0), colors: [UIColor.black.withAlphaComponent(0.3), UIColor.clear, UIColor.clear, UIColor.black.withAlphaComponent(0.3)], locations: [0.0, 0.22, 0.7, 1.0])
             if case let .animated(duration, _) = transition {
                 UIView.transition(with: self.dimNode.view, duration: duration, options: .transitionCrossDissolve, animations: {
-                    self.dimNode.backgroundColor = color
                     self.dimNode.image = image
                 }, completion: nil)
             } else {
-                self.dimNode.backgroundColor = color
                 self.dimNode.image = image
             }
         }
@@ -1329,6 +1295,8 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                     }
                 }
                 if updated, let (layout, navigationBarHeight) = strongSelf.validLayout {
+                    strongSelf.dismissKeyPreviewNode()
+                    strongSelf.updateDimVisibility()
                     strongSelf.containerLayoutUpdated(layout, navigationBarHeight: navigationBarHeight, transition: .animated(duration: 0.3, curve: .easeInOut))
                 }
                 strongSelf.hideUIForActiveVideoCallTimer = nil
@@ -1763,9 +1731,8 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         let avatarOrigin = CGPoint(x: (containerFullScreenFrame.width - avatarSize.width) / 2, y: topOriginY + 163.0)
         transition.updateFrame(node: self.avatarNode, frame: CGRect(origin: avatarOrigin, size: avatarSize))
         
-        // TODO: Maybe truncate status node
-        let statusHeight = self.statusNode.updateLayout(constrainedWidth: layout.size.width, reducedSize: self.hasVideo, transition: transition)
-        transition.updateFrame(node: self.statusNode, frame: CGRect(origin: CGPoint(x: 0.0, y: self.hasVideo ? topOriginY : avatarOrigin.y + avatarSize.height + 40.0), size: CGSize(width: layout.size.width, height: statusHeight)))
+        let statusHeight = self.statusNode.updateLayout(constrainedWidth: layout.size.width)
+        transition.updateFrame(node: self.statusNode, frame: CGRect(origin: CGPoint(x: 0.0, y: self.hasVideo ? topOriginY + 50.0 : avatarOrigin.y + avatarSize.height + 40.0), size: CGSize(width: layout.size.width, height: statusHeight)))
         transition.updateAlpha(node: self.statusNode, alpha: overlayAlpha)
         
         transition.updateFrame(node: self.toastNode, frame: CGRect(origin: CGPoint(x: 0.0, y: toastOriginY), size: CGSize(width: layout.size.width, height: toastHeight)))
@@ -1943,6 +1910,13 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             
             self.avatarNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false)
             self.avatarNode.layer.animateScale(from: 1.0, to: 0.1, duration: 0.3, removeOnCompletion: false)
+            
+            if self.hasVideo {
+                self.statusNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false)
+                self.statusNode.layer.animateScale(from: 1.0, to: 0.1, duration: 0.3, removeOnCompletion: false, completion: { [weak self] _ in
+                    self?.statusNode.isHidden = true
+                })
+            }
         }
         
         self.updateDimVisibility()
@@ -1976,6 +1950,12 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         
         self.avatarNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
         self.avatarNode.layer.animateScale(from: 0.1, to: 1.0, duration: 0.3)
+        
+        if self.statusNode.isHidden {
+            self.statusNode.isHidden = false
+            self.statusNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
+            self.statusNode.layer.animateScale(from: 0.1, to: 1.0, duration: 0.3)
+        }
         
         self.updateDimVisibility()
     }
@@ -2049,6 +2029,8 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                             }
                         }
                         if updated, let (layout, navigationBarHeight) = self.validLayout {
+                            self.dismissKeyPreviewNode()
+                            self.updateDimVisibility()
                             self.containerLayoutUpdated(layout, navigationBarHeight: navigationBarHeight, transition: .animated(duration: 0.3, curve: .easeInOut))
                         }
                     }

@@ -4,53 +4,52 @@ import Display
 import AsyncDisplayKit
 import SwiftSignalKit
 import LegacyComponents
+import AnimatedCountLabelNode
 
 private let nameFont = Font.regular(28.0)
-private let statusFont = Font.regular(16.0)
-private let reducedNameFont = Font.semibold(17.0)
+private let statusFont = Font.with(size: 16.0, traits: .monospacedNumbers)
 
 enum CallControllerStatusValue: Equatable {
-    case text(string: String, displayLogo: Bool)
-    case timer((String, Bool) -> String, Double)
-    
-    static func ==(lhs: CallControllerStatusValue, rhs: CallControllerStatusValue) -> Bool {
-        switch lhs {
-            case let .text(text, displayLogo):
-                if case .text(text, displayLogo) = rhs {
-                    return true
-                } else {
-                    return false
-                }
-            case let .timer(_, referenceTime):
-                if case .timer(_, referenceTime) = rhs {
-                    return true
-                } else {
-                    return false
-                }
-        }
-    }
+    case text(string: String)
+    case timer(timestamp: Double, reception: Int32)
+    case ended
 }
 
 final class CallControllerStatusNode: ASDisplayNode {
-    private let titleNode: TextNode
+    private let titleNode: ImmediateTextNode
     private let statusContainerNode: ASDisplayNode
-    private let statusNode: TextNode
-    private let statusMeasureNode: TextNode
+    private let statusNode: ImmediateAnimatedCountLabelNode
     private let receptionNode: CallControllerReceptionNode
-    private let logoNode: ASImageNode
     private let indicatorNode: CallControllerActivityIndicatorNode
     
     private let titleActivateAreaNode: AccessibilityAreaNode
     private let statusActivateAreaNode: AccessibilityAreaNode
     
-    var title: String = ""
-    var subtitle: String = ""
-    var status: CallControllerStatusValue = .text(string: "", displayLogo: false) {
+    var title: String = "" {
+        didSet {
+            guard self.title != oldValue else { return }
+            
+            if let validLayoutWidth = self.validLayoutWidth {
+                UIView.transition(with: self.titleNode.view, duration: 0.2, options: .transitionCrossDissolve) { [weak self] in
+                    let _ = self?.updateLayout(constrainedWidth: validLayoutWidth)
+                }
+            }
+        }
+    }
+    
+    var status: CallControllerStatusValue = .text(string: "") {
         didSet {
             if self.status != oldValue {
                 self.statusTimer?.invalidate()
                 
-                if let snapshotView = self.statusContainerNode.view.snapshotView(afterScreenUpdates: false) {
+                let withoutAnimation: Bool
+                if case .timer = oldValue, case .ended = self.status {
+                    withoutAnimation = true
+                } else {
+                    withoutAnimation = false
+                }
+                
+                if let snapshotView = self.statusContainerNode.view.snapshotView(afterScreenUpdates: false), !withoutAnimation {
                     snapshotView.frame = self.statusContainerNode.frame
                     self.view.insertSubview(snapshotView, belowSubview: self.statusContainerNode.view)
                     
@@ -65,62 +64,43 @@ final class CallControllerStatusNode: ASDisplayNode {
                     self.statusContainerNode.layer.animatePosition(from: CGPoint(x: 0.0, y: -snapshotView.frame.height / 2.0), to: CGPoint(), duration: 0.3, delay: 0.0, additive: true)
                 }
                                 
-                if case .timer = self.status {
+                if case .timer(let timestamp, let reception) = self.status {
+                    self.lastKnownTimestamp = timestamp
+                    self.receptionNode.reception = reception
+                    
                     self.statusTimer = SwiftSignalKit.Timer(timeout: 0.5, repeat: true, completion: { [weak self] in
                         if let strongSelf = self, let validLayoutWidth = strongSelf.validLayoutWidth {
-                            let _ = strongSelf.updateLayout(constrainedWidth: validLayoutWidth, reducedSize: strongSelf.reducedSize, transition: .immediate)
+                            let _ = strongSelf.updateLayout(constrainedWidth: validLayoutWidth)
                         }
                     }, queue: Queue.mainQueue())
                     self.statusTimer?.start()
                 } else {
                     if let validLayoutWidth = self.validLayoutWidth {
-                        let _ = self.updateLayout(constrainedWidth: validLayoutWidth, reducedSize: self.reducedSize, transition: .immediate)
+                        let _ = self.updateLayout(constrainedWidth: validLayoutWidth)
                     }
-                }
-            }
-        }
-    }
-    var reception: Int32? {
-        didSet {
-            if self.reception != oldValue {
-                if let reception = self.reception {
-                    self.receptionNode.reception = reception
-                    
-                    if oldValue == nil {
-                        let transition = ContainedViewLayoutTransition.animated(duration: 0.3, curve: .spring)
-                        transition.updateAlpha(node: self.receptionNode, alpha: 1.0)
-                    }
-                } else if self.reception == nil, oldValue != nil {
-                    let transition = ContainedViewLayoutTransition.animated(duration: 0.3, curve: .spring)
-                    transition.updateAlpha(node: self.receptionNode, alpha: 0.0)
                 }
                 
-                if (oldValue == nil) != (self.reception != nil) {
-                    if let validLayoutWidth = self.validLayoutWidth {
-                        let _ = self.updateLayout(constrainedWidth: validLayoutWidth, reducedSize: self.reducedSize, transition: .immediate)
-                    }
+                if self.status == .ended {
+                    self.receptionNode.reception = .min
                 }
             }
         }
     }
     
+    private var lastKnownTimestamp: Double?
     private var statusTimer: SwiftSignalKit.Timer?
     private var validLayoutWidth: CGFloat?
-    private var reducedSize: Bool = false
     
     override init() {
-        self.titleNode = TextNode()
+        self.titleNode = ImmediateTextNode()
+        self.titleNode.maximumNumberOfLines = 1
+        
         self.statusContainerNode = ASDisplayNode()
-        self.statusNode = TextNode()
-        self.statusNode.displaysAsynchronously = false
-        self.statusMeasureNode = TextNode()
+        self.statusNode = ImmediateAnimatedCountLabelNode()
+        self.statusNode.alwaysOneDirection = true
        
         self.receptionNode = CallControllerReceptionNode()
-        self.receptionNode.alpha = 0.0
-        
-        self.logoNode = ASImageNode()
-        self.logoNode.image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallTitleLogo"), color: .white)
-        self.logoNode.isHidden = true
+        self.receptionNode.isHidden = true
         
         self.indicatorNode = CallControllerActivityIndicatorNode(color: .white)
         self.indicatorNode.isHidden = true
@@ -139,7 +119,6 @@ final class CallControllerStatusNode: ASDisplayNode {
         self.addSubnode(self.statusContainerNode)
         self.statusContainerNode.addSubnode(self.statusNode)
         self.statusContainerNode.addSubnode(self.receptionNode)
-        self.statusContainerNode.addSubnode(self.logoNode)
         self.statusContainerNode.addSubnode(self.indicatorNode)
         
         self.addSubnode(self.titleActivateAreaNode)
@@ -156,80 +135,86 @@ final class CallControllerStatusNode: ASDisplayNode {
         transition.updateAlpha(node: self.statusContainerNode, alpha: alpha)
     }
     
-    func updateLayout(constrainedWidth: CGFloat, reducedSize: Bool, transition: ContainedViewLayoutTransition) -> CGFloat {
+    func updateLayout(constrainedWidth: CGFloat) -> CGFloat {
         self.validLayoutWidth = constrainedWidth
-        self.reducedSize = reducedSize
         
-        let nameFont: UIFont = reducedSize ? reducedNameFont : nameFont
-        let statusFont: UIFont = statusFont
+        let statusString: String
+        let statusSegments: [AnimatedCountLabelNode.Segment]
         
-        var statusOffset: CGFloat = 0.0
-        var statusText: String
-        var statusMeasureText: String
-        var statusDisplayLogo: Bool = false
         switch self.status {
-        case let .text(text, displayLogo):
-            statusText = text
-            statusMeasureText = text
-            statusDisplayLogo = displayLogo
-            if displayLogo {
-                statusOffset += 10.0
-            } else if self.reception == nil {
-                statusOffset += 20.0
+        case var .text(string):
+            // TODO: Remove ellipsis from localization strings
+            while string.last == "." {
+                string.removeLast()
             }
-        case let .timer(format, referenceTime):
-            let duration = Int32(CFAbsoluteTimeGetCurrent() - referenceTime)
-            let durationString: String
-            let measureDurationString: String
-            if duration > 60 * 60 {
-                durationString = String(format: "%02d:%02d:%02d", arguments: [duration / 3600, (duration / 60) % 60, duration % 60])
-                measureDurationString = "00:00:00"
-            } else {
-                durationString = String(format: "%02d:%02d", arguments: [(duration / 60) % 60, duration % 60])
-                measureDurationString = "00:00"
-            }
-            statusText = format(durationString, false)
-            statusMeasureText = format(measureDurationString, true)
-            if self.reception != nil {
-                statusOffset += 6.0 + receptionNodeSize.width
-            }
+            statusString = string
+            statusSegments = [.text(0, NSAttributedString(string: string, font: statusFont, textColor: .white))]
+        case let .timer(referenceTime, _):
+            (statusString, statusSegments) = formatString(referenceTime: referenceTime)
+        case .ended:
+            (statusString, statusSegments) = formatString(referenceTime: self.lastKnownTimestamp)
         }
         
-        // TODO: Remove ellipsis from localization strings
-        while statusText.last == "." { statusText.removeLast() }
-        while statusMeasureText.last == "." { statusMeasureText.removeLast() }
-        
-        let spacing: CGFloat = reducedSize ? 0.0 : 4.0
-        let (titleLayout, titleApply) = TextNode.asyncLayout(self.titleNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: self.title, font: nameFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil))
-        let (statusMeasureLayout, statusMeasureApply) = TextNode.asyncLayout(self.statusMeasureNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: statusMeasureText, font: statusFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil))
-        let (statusLayout, statusApply) = TextNode.asyncLayout(self.statusNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: statusText, font: statusFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil))
-        
-        let _ = titleApply()
-        let _ = statusApply()
-        let _ = statusMeasureApply()
+        self.titleNode.attributedText = NSAttributedString(string: self.title, font: nameFont, textColor: .white)
+        self.statusNode.segments = statusSegments
         
         self.titleActivateAreaNode.accessibilityLabel = self.title
-        self.statusActivateAreaNode.accessibilityLabel = statusText
+        self.statusActivateAreaNode.accessibilityLabel = statusString
         
-        self.titleNode.frame = CGRect(origin: CGPoint(x: floor((constrainedWidth - titleLayout.size.width) / 2.0), y: 0.0), size: titleLayout.size)
-        self.statusContainerNode.frame = CGRect(origin: CGPoint(x: 0.0, y: titleLayout.size.height + spacing), size: CGSize(width: constrainedWidth, height: statusLayout.size.height))
-        self.statusNode.frame = CGRect(origin: CGPoint(x: floor((constrainedWidth - statusMeasureLayout.size.width - statusOffset) / 2.0), y: 0.0), size: statusLayout.size)
-        if self.reception != nil { self.statusNode.frame.origin.x += statusOffset }
-        self.receptionNode.frame = CGRect(origin: CGPoint(x: self.statusNode.frame.minX - statusOffset, y: -5.0), size: receptionNodeSize)
+        let constrainedSize = CGSize(width: constrainedWidth - 20.0, height: .greatestFiniteMagnitude)
         
-        self.logoNode.isHidden = !statusDisplayLogo
-        if let image = self.logoNode.image, let firstLineRect = statusMeasureLayout.linesRects().first {
-            let firstLineOffset = floor((statusMeasureLayout.size.width - firstLineRect.width) / 2.0)
-            self.logoNode.frame = CGRect(origin: CGPoint(x: self.statusNode.frame.minX + firstLineOffset - image.size.width - 7.0, y: 5.0), size: image.size)
+        let titleSize = self.titleNode.updateLayout(constrainedSize)
+        self.titleNode.frame = CGRect(origin: CGPoint(x: (constrainedWidth - titleSize.width) / 2.0, y: 0.0), size: titleSize)
+        
+        let statusSize = self.statusNode.updateLayout(size: constrainedSize, animated: true)
+        let statusContainerSize = CGSize(width: 20.0 + 6.0 + statusSize.width, height: statusSize.height)
+        
+        self.statusContainerNode.frame = CGRect(origin: CGPoint(x: (constrainedWidth - statusContainerSize.width) / 2.0, y: titleSize.height + 4.0), size: statusContainerSize)
+        
+        switch self.status {
+        case .text:
+            self.receptionNode.isHidden = true
+            self.indicatorNode.isHidden = false
+            
+            self.statusNode.frame = CGRect(origin: .zero, size: statusSize)
+            self.indicatorNode.frame = CGRect(origin: CGPoint(x: self.statusNode.frame.maxX + 5.0, y: 1.0), size: activityIndicatorSize)
+        case .timer, .ended:
+            self.receptionNode.isHidden = false
+            self.indicatorNode.isHidden = true
+            
+            self.statusNode.frame = CGRect(origin: CGPoint(x: receptionNodeSize.width + 6.0, y: 0.0), size: statusSize)
+            self.receptionNode.frame = CGRect(origin: CGPoint(x: 0.0, y: -5.0), size: receptionNodeSize)
         }
-        
-        self.indicatorNode.isHidden = self.reception != nil
-        self.indicatorNode.frame = CGRect(origin: CGPoint(x: self.statusNode.frame.maxX + 5.0, y: 1.0), size: activityIndicatorSize)
         
         self.titleActivateAreaNode.frame = self.titleNode.frame
         self.statusActivateAreaNode.frame = self.statusContainerNode.frame
         
-        return titleLayout.size.height + spacing + statusLayout.size.height
+        return titleSize.height + 4.0 + statusSize.height
+    }
+    
+    private func formatString(referenceTime: Double?) -> (string: String, segments: [AnimatedCountLabelNode.Segment]) {
+        let duration = referenceTime.map { Int(CFAbsoluteTimeGetCurrent() - $0) } ?? 0
+        let formattedString: String
+        var segments = [AnimatedCountLabelNode.Segment]()
+        
+        if duration > 60 * 60 {
+            formattedString = String(format: "%02d:%02d:%02d", arguments: [duration / 3600, (duration / 60) % 60, duration % 60])
+        } else {
+            formattedString = String(format: "%02d:%02d", arguments: [(duration / 60) % 60, duration % 60])
+        }
+        
+        var textIndex = 0
+        for char in formattedString {
+            let attributedString = NSAttributedString(string: String(char), font: statusFont, textColor: .white)
+            if let value = char.wholeNumberValue {
+                segments.append(.number(value, attributedString))
+            } else {
+                segments.append(.text(textIndex, attributedString))
+                textIndex += 1
+            }
+        }
+        
+        return (formattedString, segments)
     }
 }
 
@@ -246,17 +231,18 @@ private final class CallControllerReceptionNodeParameters: NSObject {
 }
 
 private final class CallControllerReceptionNode : ASDisplayNode {
-    var reception: Int32 = 4 {
+    var reception: Int32 = 0 {
         didSet {
-            self.setNeedsDisplay()
+            guard self.reception != oldValue else { return }
+            UIView.transition(with: self.view, duration: 0.2, options: .transitionCrossDissolve) { [weak self] in
+                self?.setNeedsDisplay()
+            }
         }
     }
     
     override init() {
         super.init()
-        
         self.isOpaque = false
-        self.isLayerBacked = true
     }
     
     override func drawParameters(forAsyncLayer layer: _ASDisplayLayer) -> NSObjectProtocol? {
