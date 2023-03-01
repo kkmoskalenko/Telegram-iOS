@@ -228,7 +228,7 @@ public final class CallController: ViewController {
         }
         
         self.controllerNode.back = { [weak self] in
-            let _ = self?.dismiss()
+            let _ = self?.backPressed()
         }
         
         self.controllerNode.presentCallRating = { [weak self] callId, isVideo in
@@ -372,7 +372,10 @@ public final class CallController: ViewController {
     }
     
     @objc private func backPressed() {
-        self.dismiss()
+        self.controllerNode.animateOut(completion: { [weak self] in
+            self?.didPlayPresentationAnimation = false
+            self?.presentingViewController?.dismiss(animated: false, completion: nil)
+        })
     }
     
     public func expandFromPipIfPossible() {

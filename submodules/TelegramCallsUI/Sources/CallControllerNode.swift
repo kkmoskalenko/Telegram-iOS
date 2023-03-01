@@ -1095,9 +1095,6 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             statusValue = .ended
         case let .terminated(_, reason, _):
             statusValue = .ended
-            Queue.mainQueue().async { [weak self] in
-                self?.playCallEndedAnimation()
-            }
             
             if let reason = reason {
                 switch reason {
@@ -1191,6 +1188,9 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             case .active, .connecting, .reconnecting:
                 break
             case .terminating, .terminated:
+                Queue.mainQueue().async { [weak self] in
+                    self?.playCallEndedAnimation()
+                }
                 if self.outgoingVideoNodeValue != nil {
                     self.call.disableVideo()
                     self.cancelScheduledUIHiding()
@@ -1217,6 +1217,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 let isVideo = self.call.isVideo
                 self.ratingNode.apply = { [weak self] rating in
                     self?.sendCallRating?(callId, isVideo, rating)
+                    self?.closePressed()
                 }
                 self.ratingNode.isHidden = false
                 self.ratingNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.25)
@@ -1415,26 +1416,36 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         }
     }
     
-    private func startBackgroundAnimation() {
+    private func startBackgroundAnimation(duration: TimeInterval = 0.5) {
         guard self.backgroundAnimationTimer == nil else { return }
-        self.backgroundAnimationTimer = SwiftSignalKit.Timer(timeout: 0.5, repeat: true, completion: { [weak self] in
-            let transition = ContainedViewLayoutTransition.animated(duration: 0.5, curve: .linear)
+        
+        let animateEvent = { [weak self] in
+            guard self?.backgroundAnimationTimer != nil else { return }
+            let transition = ContainedViewLayoutTransition.animated(duration: duration, curve: .linear)
             self?.backgroundNode.animateEvent(transition: transition, extendAnimation: false, backwards: false, completion: {})
-        }, queue: .mainQueue())
+        }
+        
+        animateEvent()
+        
+        self.backgroundAnimationTimer = SwiftSignalKit.Timer(timeout: duration, repeat: true, completion: animateEvent, queue: .mainQueue())
         self.backgroundAnimationTimer?.start()
     }
     
     private func stopBackgroundAnimation() {
         self.backgroundAnimationTimer?.invalidate()
         self.backgroundAnimationTimer = nil
+        self.backgroundNode.contentView.layer.removeAnimation(forKey: "contents")
     }
     
     private func updateBackground(to gradient: BackgroundGradient) {
         guard self.currentBackground != gradient else { return }
-        self.currentBackground = gradient
         
-        UIView.transition(with: self.backgroundNode.view, duration: 1.0 / 3.0, options: [.curveEaseInOut, .transitionCrossDissolve]) { [weak self] in
+        self.currentBackground = gradient
+        self.stopBackgroundAnimation()
+        
+        UIView.transition(with: self.backgroundNode.view, duration: 0.3, options: [.curveEaseInOut, .transitionCrossDissolve]) { [weak self] in
             self?.backgroundNode.updateColors(colors: gradient.colors)
+            self?.startBackgroundAnimation()
         }
     }
     
@@ -1463,22 +1474,19 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         }
     }
     
-    private var animatingCallEnded = false
+    private var animatedCallEnded = false
     private func playCallEndedAnimation() {
-        guard !self.animatingCallEnded else { return }
-        self.animatingCallEnded = true
+        guard !self.animatedCallEnded else { return }
+        self.animatedCallEnded = true
         
         self.dismissKeyPreviewNode()
         self.avatarNode.playMuteAnimation()
         self.updateBackground(to: .blueViolet)
         
         self.closeButtonNode.isHidden = false
-        self.closeButtonNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 1.0 / 3.0, removeOnCompletion: false, completion: { [weak self] _ in
+        self.closeButtonNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3, removeOnCompletion: false, completion: { [weak self] _ in
             self?.closeButtonNode.animateProgress(duration: 5.0)
-            Queue.mainQueue().after(5.0) { [weak self] in
-                self?.animatingCallEnded = false
-                self?.closePressed()
-            }
+            Queue.mainQueue().after(5.0) { [weak self] in self?.closePressed() }
         })
         
         if let endButtonFrame = self.buttonsNode.endButtonFrame().flatMap({
@@ -1488,7 +1496,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         }
         
         for node in [self.buttonsNode, self.backButtonNode, self.backButtonArrowNode, self.keyButtonNode, self.toastNode, self.weakNetworkToastNode] {
-            node.layer.animateAlpha(from: 1.0, to: 0.0, duration: 1.0 / 3.0, removeOnCompletion: false, completion: { [weak node] _ in
+            node.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false, completion: { [weak node] _ in
                 node?.removeFromSupernode()
             })
         }
@@ -1713,7 +1721,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         
         let backSize = self.backButtonNode.measure(CGSize(width: 320.0, height: 100.0))
         if let image = self.backButtonArrowNode.image {
-            transition.updateFrame(node: self.backButtonArrowNode, frame: CGRect(origin: CGPoint(x: 10.0, y: topOriginY + 11.0), size: image.size))
+            transition.updateFrame(node: self.backButtonArrowNode, frame: CGRect(origin: CGPoint(x: 10.0, y: topOriginY + 10.0), size: image.size))
         }
         transition.updateFrame(node: self.backButtonNode, frame: CGRect(origin: CGPoint(x: 29.0, y: topOriginY + 11.0), size: backSize))
         
@@ -1802,7 +1810,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 }
             }
             
-            if expandedVideoNode === self.incomingVideoNodeValue && !expandedVideoTransition.isAnimated {
+            if expandedVideoNode === self.incomingVideoNodeValue && self.pictureInPictureTransitionFraction.isZero && !expandedVideoTransition.isAnimated {
                 expandedVideoNode.layer.animate(from: (avatarSize.width / 2.0) as NSNumber, to: (displayCornerRadius ?? 0.0) as NSNumber, keyPath: "cornerRadius", timingFunction: CAMediaTimingFunctionName.easeInEaseOut.rawValue, duration: 0.3)
                 expandedVideoNode.layer.animateFrame(from: self.avatarNode.frame, to: fullscreenVideoFrame, duration: 0.3)
                 expandedVideoNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)

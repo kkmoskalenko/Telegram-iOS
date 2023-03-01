@@ -77,7 +77,7 @@ final class CallControllerToastContainerNode: ASDisplayNode {
         
         self.appliedContent = content
         
-        let spacing: CGFloat = 16.0
+        let spacing: CGFloat = 12.0
     
         var height: CGFloat = 0.0
         var toasts: [ToastDescription] = []

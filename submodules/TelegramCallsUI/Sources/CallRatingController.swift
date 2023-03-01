@@ -432,20 +432,26 @@ final class CallControllerRatingNode: ASDisplayNode {
             }
             if let rating = self.rating {
                 self.isUserInteractionEnabled = false
-                self.playEffect()
-                self.apply?(rating)
+                self.playEffect { [weak self] in
+                    self?.apply?(rating)
+                }
             }
         }
     }
     
-    private func playEffect() {
-        guard let rating = self.rating else { return }
+    private func playEffect(completion: @escaping () -> Void) {
+        guard let rating = self.rating else {
+            completion()
+            return
+        }
         
         for (index, starNode) in starNodes.enumerated() {
             guard index < rating else { break }
             
             starNode.layer.animateScale(from: 1.0, to: 1.1, duration: 0.1, removeOnCompletion: false, completion: { [weak starNode] _ in
-                starNode?.layer.animateScale(from: 1.1, to: 1.0, duration: 0.1)
+                starNode?.layer.animateScale(from: 1.1, to: 1.0, duration: 0.1, completion: { _ in
+                    if rating < 4 && rating == index + 1 { completion() }
+                })
             })
             
             if rating >= 4 && rating == index + 1 {
@@ -453,6 +459,7 @@ final class CallControllerRatingNode: ASDisplayNode {
                 let animationOrigin = starNode.frame.center.offsetBy(dx: -animationSize.width / 2.0, dy: -animationSize.height / 2.0)
                 self.animationNode.updateLayout(size: animationSize)
                 self.animationNode.frame = CGRect(origin: animationOrigin, size: animationSize)
+                self.animationNode.completed = { _ in completion() }
                 self.animationNode.playOnce()
             }
         }
