@@ -17,6 +17,7 @@ import PresentationDataUtils
 import DeviceAccess
 import ContextUI
 import GradientBackground
+import DeviceProximity
 
 private func interpolateFrame(from fromValue: CGRect, to toValue: CGRect, t: CGFloat) -> CGRect {
     return CGRect(x: floorToScreenPixels(toValue.origin.x * t + fromValue.origin.x * (1.0 - t)), y: floorToScreenPixels(toValue.origin.y * t + fromValue.origin.y * (1.0 - t)), width: floorToScreenPixels(toValue.size.width * t + fromValue.size.width * (1.0 - t)), height: floorToScreenPixels(toValue.size.height * t + fromValue.size.height * (1.0 - t)))
@@ -491,6 +492,11 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     
     private var currentRequestedAspect: CGFloat?
     
+    private var proximityManagerIndex: Int?
+    private var proximityState: Bool = false
+    private var pauseUIAnimationTimer: SwiftSignalKit.Timer?
+    private var isUIAnimationPaused: Bool = false
+    
     init(sharedContext: SharedAccountContext, account: Account, presentationData: PresentationData, statusBar: StatusBar, debugInfo: Signal<(String, String), NoError>, shouldStayHiddenUntilConnection: Bool = false, easyDebugAccess: Bool, call: PresentationCall) {
         self.sharedContext = sharedContext
         self.account = account
@@ -794,13 +800,29 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 strongSelf.containerLayoutUpdated(layout, navigationBarHeight: navigationBarHeight, transition: .animated(duration: 0.3, curve: .easeInOut))
             }
         }
+        
+        self.proximityManagerIndex = DeviceProximityManager.shared().add { [weak self] state in
+            self?.proximityState = state
+            
+            if state {
+                self?.avatarNode.playMuteAnimation()
+            } else {
+                self?.cancelScheduledUIAnimationPausing()
+                self?.resumeUIAnimation()
+            }
+        }
     }
     
     deinit {
         if let orientationDidChangeObserver = self.orientationDidChangeObserver {
             NotificationCenter.default.removeObserver(orientationDidChangeObserver)
         }
+        if let proximityManagerIndex = self.proximityManagerIndex {
+            DeviceProximityManager.shared().remove(proximityManagerIndex)
+        }
+        self.hideUIForActiveVideoCallTimer?.invalidate()
         self.backgroundAnimationTimer?.invalidate()
+        self.pauseUIAnimationTimer?.invalidate()
     }
     
     override func didLoad() {
@@ -1171,6 +1193,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 statusValue = .text(string: self.presentationData.strings.Call_StatusConnecting)
             } else {
                 statusValue = .timer(timestamp: timestamp, reception: reception ?? 0)
+                self.maybeScheduleUIAnimationPausing()
             }
         }
         if self.shouldStayHiddenUntilConnection {
@@ -1203,7 +1226,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         
         if case .muted = callState.remoteAudioState {
             self.avatarNode.playMuteAnimation()
-        } else {
+        } else if !self.isUIAnimationPaused && !self.proximityState {
             self.avatarNode.playUnmuteAnimation()
         }
         
@@ -1311,6 +1334,50 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     private func cancelScheduledUIHiding() {
         self.hideUIForActiveVideoCallTimer?.invalidate()
         self.hideUIForActiveVideoCallTimer = nil
+    }
+    
+    private func maybeScheduleUIAnimationPausing() {
+        guard self.pauseUIAnimationTimer == nil, case .active = self.callState?.state else {
+            return
+        }
+        
+        self.pauseUIAnimationTimer = SwiftSignalKit.Timer(timeout: 10.0, repeat: false, completion: { [weak self] in
+            guard let strongSelf = self else { return }
+            var updated = false
+            
+            if let callState = strongSelf.callState, !strongSelf.isUIAnimationPaused {
+                switch callState.state {
+                case .active, .connecting, .reconnecting:
+                    strongSelf.isUIAnimationPaused = true
+                    updated = true
+                default:
+                    break
+                }
+            }
+            
+            if updated {
+                strongSelf.stopBackgroundAnimation(removeCurrentAnimation: false)
+                strongSelf.avatarNode.playMuteAnimation()
+            }
+            strongSelf.pauseUIAnimationTimer = nil
+        }, queue: Queue.mainQueue())
+        
+        self.pauseUIAnimationTimer?.start()
+    }
+    
+    private func cancelScheduledUIAnimationPausing() {
+        self.pauseUIAnimationTimer?.invalidate()
+        self.pauseUIAnimationTimer = nil
+    }
+    
+    private func resumeUIAnimation() {
+        guard self.isUIAnimationPaused else { return }
+        self.isUIAnimationPaused = false
+        
+        self.startBackgroundAnimation()
+        if case .active = self.callState?.remoteAudioState, !self.proximityState {
+            self.avatarNode.playUnmuteAnimation()
+        }
     }
     
     private var buttonsTerminationMode: CallControllerButtonsMode?
@@ -1431,10 +1498,13 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         self.backgroundAnimationTimer?.start()
     }
     
-    private func stopBackgroundAnimation() {
+    private func stopBackgroundAnimation(removeCurrentAnimation: Bool = true) {
         self.backgroundAnimationTimer?.invalidate()
         self.backgroundAnimationTimer = nil
-        self.backgroundNode.contentView.layer.removeAnimation(forKey: "contents")
+        
+        if removeCurrentAnimation {
+            self.backgroundNode.contentView.layer.removeAnimation(forKey: "contents")
+        }
     }
     
     private func updateBackground(to gradient: BackgroundGradient) {
@@ -2333,6 +2403,9 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
     }
     
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        self.cancelScheduledUIAnimationPausing()
+        self.resumeUIAnimation()
+        
         if self.debugNode != nil {
             return super.hitTest(point, with: event)
         }

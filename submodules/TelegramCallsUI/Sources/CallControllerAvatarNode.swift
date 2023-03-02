@@ -100,7 +100,7 @@ final class CallControllerAvatarNode: ASDisplayNode {
             self.avatarNode.layer.animateScale(from: avatarScale, to: 1.0, duration: 0.25, removeOnCompletion: false)
         }
         
-        self.voiceBlobView.layer.animateScale(from: 1.0, to: 0.1, duration: 0.25, removeOnCompletion: false) { [weak self] _ in
+        self.voiceBlobView.layer.animateScale(from: 1.0, to: 0.1, duration: 0.45, removeOnCompletion: false) { [weak self] _ in
             self?.voiceBlobView.isHidden = true
             self?.voiceBlobView.stopAnimating()
             self?.voiceBlobView.layer.removeAllAnimations()
