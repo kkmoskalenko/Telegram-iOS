@@ -50,7 +50,9 @@ final class EmojiSlotNode: ASDisplayNode {
                 self.stickerNode.autoplay = true
                 self.stickerNode.playToCompletionOnStop = true
                 self.stickerNode.started = { [weak self] in
-                    self?.placeholderNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2, completion: { [weak self] _ in self?.placeholderNode.isHidden = true })
+                    self?.placeholderNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2, removeOnCompletion: false, completion: { [weak self] _ in
+                        self?.placeholderNode.isHidden = true
+                    })
                 }
                 
                 let placeholderSize = CGSize(width: 48.0, height: 48.0)

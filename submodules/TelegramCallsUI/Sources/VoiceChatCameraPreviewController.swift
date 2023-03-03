@@ -121,8 +121,6 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
     private let dimNode: ASDisplayNode
     private let wrappingScrollNode: ASScrollNode
     private let contentContainerNode: ASDisplayNode
-    private let backgroundNode: ASDisplayNode
-    private let contentBackgroundNode: ASDisplayNode
     private let titleNode: ASTextNode
     private let previewContainerNode: ASDisplayNode
     private let shimmerNode: ShimmerEffectForegroundNode
@@ -165,15 +163,6 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
         
         self.contentContainerNode = ASDisplayNode()
         self.contentContainerNode.isOpaque = false
-
-        self.backgroundNode = ASDisplayNode()
-        self.backgroundNode.clipsToBounds = true
-        self.backgroundNode.cornerRadius = 16.0
-        
-        let backgroundColor = UIColor(rgb: 0x000000)
-    
-        self.contentBackgroundNode = ASDisplayNode()
-        self.contentBackgroundNode.backgroundColor = backgroundColor
         
         let title =  self.presentationData.strings.VoiceChat_VideoPreviewTitle
         
@@ -197,8 +186,10 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
         
         self.previewContainerNode = ASDisplayNode()
         self.previewContainerNode.clipsToBounds = true
-        self.previewContainerNode.cornerRadius = 11.0
         self.previewContainerNode.backgroundColor = UIColor(rgb: 0x2b2b2f)
+        if #available(iOS 13.0, *) {
+            self.previewContainerNode.layer.cornerCurve = .continuous
+        }
         
         self.shimmerNode = ShimmerEffectForegroundNode(size: 200.0)
         self.previewContainerNode.addSubnode(self.shimmerNode)
@@ -225,11 +216,8 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
         
         self.wrappingScrollNode.view.delegate = self
         self.addSubnode(self.wrappingScrollNode)
-                
-        self.wrappingScrollNode.addSubnode(self.backgroundNode)
         self.wrappingScrollNode.addSubnode(self.contentContainerNode)
-        
-        self.backgroundNode.addSubnode(self.contentBackgroundNode)
+
         self.contentContainerNode.addSubnode(self.previewContainerNode)
         self.contentContainerNode.addSubnode(self.titleNode)
         self.contentContainerNode.addSubnode(self.doneButton)
@@ -336,7 +324,7 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
     func animateIn() {
         self.dimNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.4)
         
-        let offset = self.bounds.size.height - self.contentBackgroundNode.frame.minY
+        let offset = self.bounds.size.height - self.contentContainerNode.frame.minY
         let dimPosition = self.dimNode.layer.position
         
         let transition = ContainedViewLayoutTransition.animated(duration: 0.4, curve: .spring)
@@ -375,7 +363,7 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
             internalCompletion()
         })
         
-        let offset = self.bounds.size.height - self.contentBackgroundNode.frame.minY
+        let offset = self.bounds.size.height - self.contentContainerNode.frame.minY
         let dimPosition = self.dimNode.layer.position
         self.dimNode.layer.animatePosition(from: dimPosition, to: CGPoint(x: dimPosition.x, y: dimPosition.y - offset), duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
         self.layer.animateBoundsOriginYAdditive(from: 0.0, to: -offset, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false, completion: { _ in
@@ -386,7 +374,7 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
     
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         if self.bounds.contains(point) {
-            if !self.contentBackgroundNode.bounds.contains(self.convert(point, to: self.contentBackgroundNode)) {
+            if !self.contentContainerNode.bounds.contains(self.convert(point, to: self.contentContainerNode)) {
                 return self.dimNode.view
             }
         }
@@ -417,66 +405,69 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
         } else {
             isTablet = false
         }
-        
-        var insets = layout.insets(options: [.statusBar])
-        insets.top = max(10.0, insets.top)
     
         let contentSize: CGSize
-        if isLandscape {
-            if isTablet {
-                contentSize = CGSize(width: 870.0, height: 690.0)
-            } else {
-                contentSize = CGSize(width: layout.size.width, height: layout.size.height)
-            }
+        let titleTopInset: CGFloat
+        
+        if isTablet {
+            contentSize = isLandscape ? CGSize(width: 870.0, height: 690.0) : CGSize(width: 600.0, height: 960.0)
+            titleTopInset = 20.0
         } else {
-            if isTablet {
-                contentSize = CGSize(width: 600.0, height: 960.0)
+            contentSize = CGSize(width: layout.size.width, height: layout.size.height)
+            
+            let topSafeArea: CGFloat
+            if layout.statusBarHeight == 54.0 {
+                // Workaround for iPhone 14 Pro / Pro Max
+                topSafeArea = 59.0
             } else {
-                contentSize = CGSize(width: layout.size.width, height: layout.size.height - insets.top - 8.0)
+                topSafeArea = layout.safeInsets.top
             }
+            
+            titleTopInset = topSafeArea + 11.0
         }
         
         let sideInset = floor((layout.size.width - contentSize.width) / 2.0)
         let contentFrame: CGRect
         if isTablet {
             contentFrame = CGRect(origin: CGPoint(x: sideInset, y: floor((layout.size.height - contentSize.height) / 2.0)), size: contentSize)
+            self.previewContainerNode.cornerRadius = 11.0
         } else {
-            contentFrame = CGRect(origin: CGPoint(x: sideInset, y: layout.size.height - contentSize.height), size: contentSize)
+            contentFrame = CGRect(origin: .zero, size: contentSize)
+            self.previewContainerNode.cornerRadius = 0.0
         }
-        var backgroundFrame = contentFrame
-        if !isTablet {
-            backgroundFrame.size.height += 2000.0
-        }
-        if backgroundFrame.minY < contentFrame.minY {
-            backgroundFrame.origin.y = contentFrame.minY
-        }
-        transition.updateFrame(node: self.backgroundNode, frame: backgroundFrame)
-        transition.updateFrame(node: self.contentBackgroundNode, frame: CGRect(origin: CGPoint(), size: backgroundFrame.size))
+        
         transition.updateFrame(node: self.wrappingScrollNode, frame: CGRect(origin: CGPoint(), size: layout.size))
         transition.updateFrame(node: self.dimNode, frame: CGRect(origin: CGPoint(), size: layout.size))
         
         let titleSize = self.titleNode.measure(CGSize(width: contentFrame.width, height: .greatestFiniteMagnitude))
-        let titleFrame = CGRect(origin: CGPoint(x: floor((contentFrame.width - titleSize.width) / 2.0), y: 20.0), size: titleSize)
+        let titleFrame = CGRect(origin: CGPoint(x: floor((contentFrame.width - titleSize.width) / 2.0), y: titleTopInset), size: titleSize)
         transition.updateFrame(node: self.titleNode, frame: titleFrame)
                 
         var previewSize: CGSize
         var previewFrame: CGRect
-        let previewAspectRatio: CGFloat = 1.85
-        if isLandscape {
-            let previewHeight = contentFrame.height
-            previewSize = CGSize(width: min(contentFrame.width - layout.safeInsets.left - layout.safeInsets.right, ceil(previewHeight * previewAspectRatio)), height: previewHeight)
-            previewFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((contentFrame.width - previewSize.width) / 2.0), y: 0.0), size: previewSize)
+        
+        if isTablet {
+            let previewAspectRatio: CGFloat = 1.85
+            if isLandscape {
+                let previewHeight = contentFrame.height
+                previewSize = CGSize(width: min(contentFrame.width - layout.safeInsets.left - layout.safeInsets.right, ceil(previewHeight * previewAspectRatio)), height: previewHeight)
+                previewFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((contentFrame.width - previewSize.width) / 2.0), y: 0.0), size: previewSize)
+            } else {
+                previewSize = CGSize(width: contentFrame.width, height: min(contentFrame.height, ceil(contentFrame.width * previewAspectRatio)))
+                previewFrame = CGRect(origin: CGPoint(), size: previewSize)
+            }
         } else {
-            previewSize = CGSize(width: contentFrame.width, height: min(contentFrame.height, ceil(contentFrame.width * previewAspectRatio)))
-            previewFrame = CGRect(origin: CGPoint(), size: previewSize)
+            previewSize = contentSize
+            previewFrame = contentFrame
         }
+        
         transition.updateFrame(node: self.previewContainerNode, frame: previewFrame)
         transition.updateFrame(node: self.shimmerNode, frame: CGRect(origin: CGPoint(), size: previewFrame.size))
         self.shimmerNode.update(foregroundColor: UIColor(rgb: 0xffffff, alpha: 0.07))
         self.shimmerNode.updateAbsoluteRect(previewFrame, within: layout.size)
         
         let cancelButtonSize = self.cancelButton.measure(CGSize(width: (previewFrame.width - titleSize.width) / 2.0, height: .greatestFiniteMagnitude))
-        let cancelButtonFrame = CGRect(origin: CGPoint(x: previewFrame.minX + 17.0, y: 20.0), size: cancelButtonSize)
+        let cancelButtonFrame = CGRect(origin: CGPoint(x: previewFrame.minX + 17.0, y: titleTopInset), size: cancelButtonSize)
         transition.updateFrame(node: self.cancelButton, frame: cancelButtonFrame)
         
         self.cameraNode.frame =  CGRect(origin: CGPoint(), size: previewSize)
@@ -493,7 +484,11 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
 
         let buttonInset: CGFloat = 16.0
         let buttonMaxWidth: CGFloat = 360.0
-        let buttonBottomOffset: CGFloat = 14.0 + layout.safeInsets.bottom
+        var buttonBottomOffset: CGFloat = 14.0
+        
+        if !isTablet {
+            buttonBottomOffset += layout.safeInsets.bottom + layout.intrinsicInsets.bottom
+        }
         
         let buttonWidth = min(buttonMaxWidth, contentFrame.width - buttonInset * 2.0)
         let doneButtonHeight = self.doneButton.updateLayout(width: buttonWidth, transition: transition)

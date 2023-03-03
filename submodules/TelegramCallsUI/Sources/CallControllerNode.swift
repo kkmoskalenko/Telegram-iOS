@@ -1214,10 +1214,6 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 Queue.mainQueue().async { [weak self] in
                     self?.playCallEndedAnimation()
                 }
-                if self.outgoingVideoNodeValue != nil {
-                    self.call.disableVideo()
-                    self.cancelScheduledUIHiding()
-                }
                 fallthrough
             default:
                 self.isUIHidden = false
@@ -1565,7 +1561,16 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             self.closeButtonNode.layer.animateFrame(from: endButtonFrame, to: self.closeButtonNode.frame, duration: 0.25)
         }
         
-        for node in [self.buttonsNode, self.backButtonNode, self.backButtonArrowNode, self.keyButtonNode, self.toastNode, self.weakNetworkToastNode] {
+        var nodesToRemove = [self.buttonsNode, self.backButtonNode, self.backButtonArrowNode, self.keyButtonNode, self.toastNode, self.weakNetworkToastNode]
+        if let outgoingVideoNode = self.outgoingVideoNodeValue {
+            nodesToRemove.append(outgoingVideoNode)
+            
+            self.call.disableVideo()
+            self.cancelScheduledUIHiding()
+            self.outgoingVideoNodeValue = nil
+        }
+        
+        for node in nodesToRemove {
             node.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false, completion: { [weak node] _ in
                 node?.removeFromSupernode()
             })
@@ -1880,7 +1885,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 }
             }
             
-            if expandedVideoNode === self.incomingVideoNodeValue && self.pictureInPictureTransitionFraction.isZero && !expandedVideoTransition.isAnimated {
+            if expandedVideoNode === self.incomingVideoNodeValue && self.pictureInPictureTransitionFraction.isZero && self.animationForExpandedVideoSnapshotView == nil && !expandedVideoTransition.isAnimated {
                 expandedVideoNode.layer.animate(from: (avatarSize.width / 2.0) as NSNumber, to: (displayCornerRadius ?? 0.0) as NSNumber, keyPath: "cornerRadius", timingFunction: CAMediaTimingFunctionName.easeInEaseOut.rawValue, duration: 0.3)
                 expandedVideoNode.layer.animateFrame(from: self.avatarNode.frame, to: fullscreenVideoFrame, duration: 0.3)
                 expandedVideoNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
