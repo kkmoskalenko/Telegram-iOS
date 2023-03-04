@@ -803,10 +803,17 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             self?.proximityState = state
             
             if state {
-                self?.avatarNode.playMuteAnimation()
+                if case .active = self?.callState?.state {
+                    self?.avatarNode.playMuteAnimation()
+                }
             } else {
                 self?.cancelScheduledUIAnimationPausing()
-                self?.resumeUIAnimation()
+                
+                if self?.isUIAnimationPaused == true {
+                    self?.resumeUIAnimation()
+                } else if case .active = self?.callState?.remoteAudioState {
+                    self?.avatarNode.playUnmuteAnimation()
+                }
             }
         }
     }
@@ -1458,6 +1465,9 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             if !self.shouldStayHiddenUntilConnection {
                 self.containerNode.layer.animateScale(from: 1.04, to: 1.0, duration: 0.3)
                 self.containerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
+                
+                self.cancelScheduledUIAnimationPausing()
+                self.resumeUIAnimation()
             }
         }
     }
@@ -1836,8 +1846,10 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         self.ratingNode.frame = CGRect(x: (layout.size.width - ratingNodeWidth) / 2.0, y: self.statusNode.frame.maxY + 50.0, width: ratingNodeWidth, height: ratingNodeHeight)
         
         let closeButtonSize = CGSize(width: ratingNodeWidth, height: 50.0)
+        let endButtonFrame = self.buttonsNode.endButtonFrame().flatMap { self.buttonsNode.view.convert($0, to: self.view) }
+        let closeButtonOrigin = CGPoint(x: (layout.size.width - closeButtonSize.width) / 2.0, y:  (endButtonFrame?.minY ?? buttonsOriginY) + 3.0)
         self.closeButtonNode.updateLayout(size: closeButtonSize, transition: transition)
-        transition.updateFrame(node: self.closeButtonNode, frame: CGRect(origin: CGPoint(x: (layout.size.width - closeButtonSize.width) / 2.0, y: buttonsOriginY + 3.0), size: closeButtonSize))
+        transition.updateFrame(node: self.closeButtonNode, frame: CGRect(origin: closeButtonOrigin, size: closeButtonSize))
         
         let fullscreenVideoFrame = containerFullScreenFrame
         let previewVideoFrame = self.calculatePreviewVideoRect(layout: layout, navigationHeight: navigationBarHeight)
@@ -1995,6 +2007,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         }
         
         self.updateDimVisibility()
+        self.cancelScheduledUIHiding()
     }
     
     @objc func backPressed() {
@@ -2077,7 +2090,8 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 if self.hasVideoNodes {
                     let point = recognizer.location(in: recognizer.view)
                     if self.expandedVideoNode != nil, self.minimizedVideoNode?.frame.contains(point) == true {
-                        swapVideoNodes()
+                        self.cancelScheduledUIHiding()
+                        self.swapVideoNodes()
                     } else {
                         var updated = false
                         if let callState = self.callState {
