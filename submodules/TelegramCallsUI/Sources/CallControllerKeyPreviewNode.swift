@@ -21,6 +21,7 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
     private let buttonSeparator: CALayer
     
     private let effectView: UIVisualEffectView
+    private let backgroundContainerNode: ASDisplayNode
     
     private let accountContext: AccountContext
     var dismiss: (() -> Void)?
@@ -67,6 +68,10 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
             self.buttonNode.layer.cornerCurve = .continuous
         }
         
+        self.backgroundContainerNode = ASDisplayNode()
+        self.backgroundContainerNode.displaysAsynchronously = false
+        self.backgroundContainerNode.layer.anchorPoint = CGPoint(x: 1.0, y: 0.0)
+        
         super.init()
         
         self.titleTextNode.attributedText = NSAttributedString(string: titleText, font: Font.semibold(16.0), textColor: UIColor.white, paragraphAlignment: .center)
@@ -81,12 +86,14 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
             }
         }
         
-        self.view.addSubview(self.effectView)
-        self.addSubnode(self.keyContainerNode)
-        self.addSubnode(self.titleTextNode)
-        self.addSubnode(self.infoTextNode)
-        self.addSubnode(self.buttonNode)
+        self.addSubnode(self.backgroundContainerNode)
+        self.backgroundContainerNode.view.addSubview(self.effectView)
+        self.backgroundContainerNode.addSubnode(self.titleTextNode)
+        self.backgroundContainerNode.addSubnode(self.infoTextNode)
+        self.backgroundContainerNode.addSubnode(self.buttonNode)
         self.buttonNode.layer.addSublayer(self.buttonSeparator)
+        
+        self.addSubnode(self.keyContainerNode)
         self.emojiNodes.forEach { self.keyContainerNode.addSubnode($0) }
     }
     
@@ -97,7 +104,8 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
     }
     
     func updateLayout(size: CGSize, transition: ContainedViewLayoutTransition) {
-        self.effectView.frame = CGRect(origin: CGPoint(), size: size)
+        self.effectView.frame = CGRect(origin: .zero, size: size)
+        self.backgroundContainerNode.frame = CGRect(origin: .zero, size: size)
         
         let keyContainerSize = CGSize(width: 210.0, height: 48.0)
         transition.updateFrame(node: self.keyContainerNode, frame: CGRect(origin: CGPoint(x: (size.width - keyContainerSize.width) / 2.0, y: 20.0), size: keyContainerSize))
@@ -135,14 +143,13 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
         self.keyContainerNode.layer.animateScale(from: rect.size.width / self.keyContainerNode.frame.size.width, to: 1.0, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
         self.emojiNodes.forEach { $0.playOnce() }
         
-        self.titleTextNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
-        self.infoTextNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
-        self.buttonNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
-        self.buttonSeparator.backgroundColor = UIColor(white: lightStyle ? 0.0 : 1.0, alpha: lightStyle ? 0.4 : 0.5).cgColor
+        self.backgroundContainerNode.layer.animateScale(from: 0.1, to: 1.0, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
+        self.backgroundContainerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
         
         UIView.animate(withDuration: 0.3, animations: {
             self.effectView.effect = UIBlurEffect(style: lightStyle ? .light : .dark)
             self.effectView.alpha = lightStyle ? 0.85 : 1.0
+            self.buttonSeparator.backgroundColor = UIColor(white: lightStyle ? 0.0 : 1.0, alpha: lightStyle ? 0.4 : 0.5).cgColor
         })
     }
     
@@ -153,11 +160,10 @@ final class CallControllerKeyPreviewNode: ASDisplayNode {
         self.keyContainerNode.layer.animateScale(from: 1.0, to: rect.size.width / self.keyContainerNode.frame.size.width, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
         self.emojiNodes.forEach { $0.stop() }
         
-        self.titleTextNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false)
-        self.infoTextNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false)
-        self.buttonNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false)
+        self.backgroundContainerNode.layer.animateScale(from: 1.0, to: 0.1, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
+        self.backgroundContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
         
-        UIView.animate(withDuration: 0.3, animations: {
+        UIView.animate(withDuration: 0.2, animations: {
             self.effectView.effect = nil
         })
     }

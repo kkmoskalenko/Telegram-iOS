@@ -414,8 +414,6 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         
     private var expandedVideoNode: CallVideoNode?
     private var minimizedVideoNode: CallVideoNode?
-    private var disableAnimationForExpandedVideoOnce: Bool = false
-    private var animationForExpandedVideoSnapshotView: UIView? = nil
     
     private var outgoingVideoNodeCorner: VideoNodeCorner = .bottomRight
     private let backButtonArrowNode: ASImageNode
@@ -1561,14 +1559,22 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             self.closeButtonNode.layer.animateFrame(from: endButtonFrame, to: self.closeButtonNode.frame, duration: 0.25)
         }
         
-        var nodesToRemove = [self.buttonsNode, self.backButtonNode, self.backButtonArrowNode, self.keyButtonNode, self.toastNode, self.weakNetworkToastNode]
-        if let outgoingVideoNode = self.outgoingVideoNodeValue {
-            nodesToRemove.append(outgoingVideoNode)
-            
-            self.call.disableVideo()
-            self.cancelScheduledUIHiding()
-            self.outgoingVideoNodeValue = nil
+        var nodesToRemove = [self.buttonsNode, self.backButtonNode, self.backButtonArrowNode, self.keyButtonNode, self.keyPreviewNode, self.toastNode, self.weakNetworkToastNode]
+        
+        if let expandedVideoNode = self.expandedVideoNode {
+            self.expandedVideoNode = nil
+            nodesToRemove.append(expandedVideoNode)
+            expandedVideoNode.layer.removeAllAnimations()
         }
+        
+        if let minimizedVideoNode = self.minimizedVideoNode {
+            self.minimizedVideoNode = nil
+            nodesToRemove.append(minimizedVideoNode)
+            minimizedVideoNode.layer.removeAllAnimations()
+        }
+        
+        self.incomingVideoNodeValue = nil
+        self.outgoingVideoNodeValue = nil
         
         for node in nodesToRemove {
             node.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false, completion: { [weak node] _ in
@@ -1854,11 +1860,9 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         
         if let expandedVideoNode = self.expandedVideoNode {
             transition.updateAlpha(node: expandedVideoNode, alpha: 1.0)
-            var expandedVideoTransition = transition
-            if expandedVideoNode.frame.isEmpty || self.disableAnimationForExpandedVideoOnce {
-                expandedVideoTransition = .immediate
-                self.disableAnimationForExpandedVideoOnce = false
-            }
+            
+            let animatingExpandedVideoInsertion = expandedVideoNode.frame.isEmpty
+            let expandedVideoTransition = animatingExpandedVideoInsertion ? .immediate : transition
             
             if let removedExpandedVideoNodeValue = self.removedExpandedVideoNodeValue {
                 self.removedExpandedVideoNodeValue = nil
@@ -1885,7 +1889,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 }
             }
             
-            if expandedVideoNode === self.incomingVideoNodeValue && self.pictureInPictureTransitionFraction.isZero && self.animationForExpandedVideoSnapshotView == nil && !expandedVideoTransition.isAnimated {
+            if expandedVideoNode === self.incomingVideoNodeValue && self.outgoingVideoNodeValue == nil && self.pictureInPictureTransitionFraction.isZero && animatingExpandedVideoInsertion {
                 expandedVideoNode.layer.animate(from: (avatarSize.width / 2.0) as NSNumber, to: (displayCornerRadius ?? 0.0) as NSNumber, keyPath: "cornerRadius", timingFunction: CAMediaTimingFunctionName.easeInEaseOut.rawValue, duration: 0.3)
                 expandedVideoNode.layer.animateFrame(from: self.avatarNode.frame, to: fullscreenVideoFrame, duration: 0.3)
                 expandedVideoNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
@@ -1916,24 +1920,12 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 didAppear = true
             }
             if self.minimizedVideoDraggingPosition == nil {
-                if let animationForExpandedVideoSnapshotView = self.animationForExpandedVideoSnapshotView {
-                    self.containerNode.view.addSubview(animationForExpandedVideoSnapshotView)
-                    transition.updateAlpha(layer: animationForExpandedVideoSnapshotView.layer, alpha: 0.0, completion: { [weak animationForExpandedVideoSnapshotView] _ in
-                        animationForExpandedVideoSnapshotView?.removeFromSuperview()
-                    })
-                    transition.updateTransformScale(layer: animationForExpandedVideoSnapshotView.layer, scale: previewVideoFrame.width / fullscreenVideoFrame.width)
-                    
-                    transition.updatePosition(layer: animationForExpandedVideoSnapshotView.layer, position: CGPoint(x: previewVideoFrame.minX + previewVideoFrame.center.x /  fullscreenVideoFrame.width * previewVideoFrame.width, y: previewVideoFrame.minY + previewVideoFrame.center.y / fullscreenVideoFrame.height * previewVideoFrame.height))
-                    self.animationForExpandedVideoSnapshotView = nil
-                }
                 minimizedVideoTransition.updateFrame(node: minimizedVideoNode, frame: previewVideoFrame)
                 minimizedVideoNode.updateLayout(size: previewVideoFrame.size, cornerRadius: interpolate(from: 14.0, to: 24.0, value: self.pictureInPictureTransitionFraction), isOutgoing: minimizedVideoNode === self.outgoingVideoNodeValue, deviceOrientation: mappedDeviceOrientation, isCompactLayout: layout.metrics.widthClass == .compact, transition: minimizedVideoTransition)
                 if transition.isAnimated && didAppear {
                     minimizedVideoNode.layer.animateSpring(from: 0.1 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.5)
                 }
             }
-            
-            self.animationForExpandedVideoSnapshotView = nil
         }
         
         let keyTextSize = self.keyButtonNode.frame.size
@@ -2084,22 +2076,8 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
             } else {
                 if self.hasVideoNodes {
                     let point = recognizer.location(in: recognizer.view)
-                    if let expandedVideoNode = self.expandedVideoNode, let minimizedVideoNode = self.minimizedVideoNode, minimizedVideoNode.frame.contains(point) {
-                        if !self.areUserActionsDisabledNow() {
-                            let copyView = minimizedVideoNode.view.snapshotView(afterScreenUpdates: false)
-                            copyView?.frame = minimizedVideoNode.frame
-                            self.expandedVideoNode = minimizedVideoNode
-                            self.minimizedVideoNode = expandedVideoNode
-                            if let supernode = expandedVideoNode.supernode {
-                                supernode.insertSubnode(expandedVideoNode, aboveSubnode: minimizedVideoNode)
-                            }
-                            self.disableActionsUntilTimestamp = CACurrentMediaTime() + 0.3
-                            if let (layout, navigationBarHeight) = self.validLayout {
-                                self.disableAnimationForExpandedVideoOnce = true
-                                self.animationForExpandedVideoSnapshotView = copyView
-                                self.containerLayoutUpdated(layout, navigationBarHeight: navigationBarHeight, transition: .animated(duration: 0.3, curve: .easeInOut))
-                            }
-                        }
+                    if self.expandedVideoNode != nil, self.minimizedVideoNode?.frame.contains(point) == true {
+                        swapVideoNodes()
                     } else {
                         var updated = false
                         if let callState = self.callState {
@@ -2144,6 +2122,44 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 }
             }
         }
+    }
+    
+    private func swapVideoNodes() {
+        guard !self.areUserActionsDisabledNow(), let expandedVideoNode = self.expandedVideoNode, let minimizedVideoNode = self.minimizedVideoNode else { return }
+        
+        let minimizedSnapshot = minimizedVideoNode.view.snapshotView(afterScreenUpdates: false)
+        minimizedSnapshot?.frame = minimizedVideoNode.frame
+        
+        let expandedSnapshot = expandedVideoNode.view.snapshotView(afterScreenUpdates: false)
+        expandedSnapshot?.frame = expandedVideoNode.frame
+        
+        self.disableActionsUntilTimestamp = CACurrentMediaTime() + 0.3
+        minimizedVideoNode.layer.animateScale(from: 1.0, to: 0.9, duration: 0.15, removeOnCompletion: false, completion: { [weak self, weak minimizedVideoNode, weak expandedVideoNode] _ in
+            guard let minimizedVideoNode, let expandedVideoNode else { return }
+            
+            self?.expandedVideoNode = minimizedVideoNode
+            self?.minimizedVideoNode = expandedVideoNode
+            expandedVideoNode.supernode?.insertSubnode(expandedVideoNode, aboveSubnode: minimizedVideoNode)
+            
+            if let (layout, navigationBarHeight) = self?.validLayout {
+                minimizedVideoNode.layer.removeAnimation(forKey: "transform.scale")
+                self?.containerLayoutUpdated(layout, navigationBarHeight: navigationBarHeight, transition: .immediate)
+                
+                self?.minimizedVideoNode?.layer.animateScale(from: 0.9, to: 1.0, duration: 0.15)
+                minimizedSnapshot?.layer.animateScale(from: 0.9, to: 1.0, duration: 0.15)
+                
+                if let minimizedSnapshot, let expandedSnapshot {
+                    self?.videoContainerNode.contentNode.view.addSubview(expandedSnapshot)
+                    self?.videoContainerNode.contentNode.view.addSubview(minimizedSnapshot)
+                    
+                    for snapshot in [minimizedSnapshot, expandedSnapshot] {
+                        snapshot.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.15, removeOnCompletion: false, completion: { [weak snapshot] _ in
+                            snapshot?.removeFromSuperview()
+                        })
+                    }
+                }
+            }
+        })
     }
     
     private func presentDebugNode() {
