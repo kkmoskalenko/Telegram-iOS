@@ -420,7 +420,7 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
                 // Workaround for iPhone 14 Pro / Pro Max
                 topSafeArea = 59.0
             } else {
-                topSafeArea = layout.safeInsets.top
+                topSafeArea = max(layout.safeInsets.top, layout.statusBarHeight ?? 0.0)
             }
             
             titleTopInset = topSafeArea + 11.0

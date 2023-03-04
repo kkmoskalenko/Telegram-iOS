@@ -149,7 +149,7 @@ final class CallControllerToastContainerNode: ASDisplayNode {
                 removedKeys.append(key)
                 self.visibleToastNodes.removeAll { $0 === toastNode }
                 if animated {
-                    toastNode.animateOut(transition: transition) { [weak toastNode] in
+                    toastNode.animateOut() { [weak toastNode] in
                         toastNode?.removeFromSupernode()
                     }
                 } else {
@@ -300,10 +300,8 @@ final class CallControllerToastItemNode: ASDisplayNode {
         self.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.3, damping: 105.0)
     }
     
-    func animateOut(transition: ContainedViewLayoutTransition, completion: @escaping () -> Void) {
-        transition.updateTransformScale(node: self, scale: 0.1)
-        transition.updateAlpha(node: self, alpha: 0.0, completion: { _ in
-            completion()
-        })
+    func animateOut(completion: @escaping () -> Void) {
+        self.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2, removeOnCompletion: false, completion: { _ in completion() })
+        self.layer.animateSpring(from: 1.0 as NSNumber, to: 0.1 as NSNumber, keyPath: "transform.scale", duration: 0.3, damping: 105.0, removeOnCompletion: false)
     }
 }

@@ -1594,7 +1594,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
         } else {
             self.updateBackground(to: .blueGreen)
             if !self.weakNetworkToastNode.isHidden {
-                self.weakNetworkToastNode.animateOut(transition: .animated(duration: 0.3, curve: .spring)) { [weak self] in
+                self.weakNetworkToastNode.animateOut() { [weak self] in
                     self?.weakNetworkToastNode.isHidden = true
                 }
             }
