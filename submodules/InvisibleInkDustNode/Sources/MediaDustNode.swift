@@ -394,6 +394,7 @@ public class MediaDustNode: ASDisplayNode {
     }
         
     public func update(size: CGSize, color: UIColor, transition: ContainedViewLayoutTransition) {
+        guard size != self.currentParams?.size || color != self.currentParams?.color else { return }
         self.currentParams = (size, color)
         
         let bounds = CGRect(origin: .zero, size: size)

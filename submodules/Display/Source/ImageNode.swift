@@ -115,6 +115,39 @@ public struct ImageCorners: Equatable {
     public func withRemovedTails() -> ImageCorners {
         return ImageCorners(topLeft: self.topLeft.withoutTail, topRight: self.topRight.withoutTail, bottomLeft: self.bottomLeft.withoutTail, bottomRight: self.bottomRight.withoutTail)
     }
+    
+    public var layerCorners: (radius: CGFloat, cornerMask: CACornerMask)? {
+        guard case .Corner(let topLeftRadius) = topLeft,
+              case .Corner(let topRightRadius) = topRight,
+              case .Corner(let bottomLeftRadius) = bottomLeft,
+              case .Corner(let bottomRightRadius) = bottomRight
+        else { return nil }
+        
+        let maxRadius = max(topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius)
+        if maxRadius.isZero { return (.zero, []) }
+        
+        guard topLeftRadius.isZero || topLeftRadius == maxRadius,
+              topRightRadius.isZero || topRightRadius == maxRadius,
+              bottomLeftRadius.isZero || bottomLeftRadius == maxRadius,
+              bottomRightRadius.isZero || bottomRightRadius == maxRadius
+        else { return nil }
+        
+        var maskedCorners: CACornerMask = []
+        if !topLeftRadius.isZero {
+            maskedCorners.insert(.layerMinXMinYCorner)
+        }
+        if !topRightRadius.isZero {
+            maskedCorners.insert(.layerMaxXMinYCorner)
+        }
+        if !bottomLeftRadius.isZero {
+            maskedCorners.insert(.layerMaxXMinYCorner)
+        }
+        if !bottomRightRadius.isZero {
+            maskedCorners.insert(.layerMaxXMaxYCorner)
+        }
+        
+        return (maxRadius, maskedCorners)
+    }
 }
 
 public func ==(lhs: ImageCorners, rhs: ImageCorners) -> Bool {

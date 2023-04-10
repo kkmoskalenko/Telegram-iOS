@@ -1162,7 +1162,9 @@ public func chatSecretPhoto(account: Account, userLocation: MediaResourceUserLoc
             
             adjustSaturationInContext(context: context, saturation: 1.7)
             
-            addCorners(context, arguments: arguments)
+            if !arguments.corners.isEmpty {
+                addCorners(context, arguments: arguments)
+            }
             
             return context
         }
@@ -2154,7 +2156,9 @@ public func chatSecretMessageVideo(account: Account, userLocation: MediaResource
                 }
             }
             
-            addCorners(context, arguments: arguments)
+            if !arguments.corners.isEmpty {
+                addCorners(context, arguments: arguments)
+            }
             
             return context
         }

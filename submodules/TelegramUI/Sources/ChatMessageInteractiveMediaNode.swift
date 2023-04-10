@@ -280,8 +280,26 @@ private class ExtendedMediaOverlayNode: ASDisplayNode {
                 self.randomId = randomId
                 self.blurredImageNode.setSignal(imageSignal, attemptSynchronously: true)
                 
+                let imageCorners: ImageCorners
+                if let (radius, maskedCorners) = corners?.layerCorners {
+                    imageCorners = ImageCorners()
+                    
+                    self.blurredImageNode.layer.masksToBounds = true
+                    self.blurredImageNode.layer.cornerRadius = radius
+                    self.blurredImageNode.layer.maskedCorners = maskedCorners
+                    if #available(iOS 13.0, *) {
+                        self.blurredImageNode.layer.cornerCurve = .continuous
+                    }
+                } else {
+                    imageCorners = corners ?? ImageCorners()
+                    
+                    self.blurredImageNode.layer.masksToBounds = false
+                    self.blurredImageNode.layer.cornerRadius = .zero
+                    self.blurredImageNode.layer.maskedCorners = []
+                }
+                
                 let imageLayout = self.blurredImageNode.asyncLayout()
-                let arguments = TransformImageArguments(corners: corners ?? ImageCorners(), imageSize: drawingSize, boundingSize: boundingSize, intrinsicInsets: UIEdgeInsets(), resizeMode: .blurBackground, emptyColor: .clear, custom: nil)
+                let arguments = TransformImageArguments(corners: imageCorners, imageSize: drawingSize, boundingSize: boundingSize, intrinsicInsets: UIEdgeInsets(), resizeMode: .blurBackground, emptyColor: .clear, custom: nil)
                 let apply = imageLayout(arguments)
                 apply()
             }
@@ -974,7 +992,7 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                                     return chatMessagePhoto(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), synchronousLoad: synchronousLoad, highQuality: highQuality)
                                 }
                                 updateBlurredImageSignal = { synchronousLoad, _ in
-                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), ignoreFullSize: true, synchronousLoad: true)
+                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), ignoreFullSize: true)
                                 }
                             }
                             
@@ -1029,7 +1047,7 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                                         return mediaGridMessageVideo(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), onlyFullSize: currentMedia?.id?.namespace == Namespaces.Media.LocalFile, autoFetchFullSizeThumbnail: true)
                                     }
                                     updateBlurredImageSignal = { synchronousLoad, _ in
-                                        return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), synchronousLoad: true)
+                                        return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file))
                                     }
                                 }
                             }
@@ -1906,7 +1924,6 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                 self.extendedMediaOverlayNode = extendedMediaOverlayNode
                 self.pinchContainerNode.contentNode.insertSubnode(extendedMediaOverlayNode, aboveSubnode: self.imageNode)
             }
-            self.extendedMediaOverlayNode?.frame = self.imageNode.frame
             
             var tappable = false
             switch state {
@@ -1932,7 +1949,11 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                     break
                 }
             }
-            self.extendedMediaOverlayNode?.update(size: self.imageNode.frame.size, text: paymentText, imageSignal: self.currentBlurredImageSignal, imageFrame: self.imageNode.view.convert(self.imageNode.bounds, to: self.extendedMediaOverlayNode?.view), corners: self.currentImageArguments?.corners)
+            
+            if self.extendedMediaOverlayNode?.frame != self.imageNode.frame {
+                self.extendedMediaOverlayNode?.frame = self.imageNode.frame
+                self.extendedMediaOverlayNode?.update(size: self.imageNode.frame.size, text: paymentText, imageSignal: self.currentBlurredImageSignal, imageFrame: self.imageNode.view.convert(self.imageNode.bounds, to: self.extendedMediaOverlayNode?.view), corners: self.currentImageArguments?.corners)
+            }
         } else if let extendedMediaOverlayNode = self.extendedMediaOverlayNode {
             self.extendedMediaOverlayNode = nil
             extendedMediaOverlayNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false, completion: { [weak extendedMediaOverlayNode] _ in
