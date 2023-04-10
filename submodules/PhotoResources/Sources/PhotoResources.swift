@@ -2969,7 +2969,9 @@ public func playerAlbumArt(postbox: Postbox, engine: TelegramEngine, fileReferen
                 }
             }
             
-            addCorners(context, arguments: arguments)
+            if !arguments.corners.isEmpty {
+                addCorners(context, arguments: arguments)
+            }
             
             return context
         }

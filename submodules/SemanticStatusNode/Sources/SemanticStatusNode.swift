@@ -870,7 +870,7 @@ public final class SemanticStatusNode: ASControlNode {
             guard let strongSelf = self, ready else {
                 return
             }
-            let context = transform(TransformImageArguments(corners: ImageCorners(radius: strongSelf.bounds.width / 2.0), imageSize: strongSelf.bounds.size, boundingSize: strongSelf.bounds.size, intrinsicInsets: UIEdgeInsets()))
+            let context = transform(TransformImageArguments(corners: ImageCorners(), imageSize: strongSelf.bounds.size, boundingSize: strongSelf.bounds.size, intrinsicInsets: UIEdgeInsets()))
             
             let previousAppearanceContext = strongSelf.appearanceContext
             strongSelf.appearanceContext = strongSelf.appearanceContext.withUpdatedBackgroundImage(context?.generateImage())
