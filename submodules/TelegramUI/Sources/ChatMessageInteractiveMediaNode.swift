@@ -174,6 +174,23 @@ extension UIBezierPath {
     }
 }
 
+private let chatMediaProcessingQueue = Queue(queue: DispatchQueue(label: "ChatMediaProcessingQueue",
+                                                                  qos: .utility,
+                                                                  attributes: .concurrent))
+
+private func runOnMediaQueue<T, E>(attemptSynchronously: Bool = false) -> (Signal<T, E>) -> Signal<T, E> {
+    if attemptSynchronously {
+        return { signal in
+            return signal
+        }
+    } else {
+        return { signal in
+            return signal
+            |> runOn(chatMediaProcessingQueue)
+        }
+    }
+}
+
 private class ExtendedMediaOverlayNode: ASDisplayNode {
     private let blurredImageNode: TransformImageNode
     private let dustNode: MediaDustNode
@@ -985,14 +1002,16 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                             }
                             if isSecretMedia {
                                 updateImageSignal = { synchronousLoad, _ in
-                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image))
+                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), synchronousLoad: synchronousLoad)
+                                    |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                 }
                             } else {
                                 updateImageSignal = { synchronousLoad, highQuality in
                                     return chatMessagePhoto(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), synchronousLoad: synchronousLoad, highQuality: highQuality)
                                 }
                                 updateBlurredImageSignal = { synchronousLoad, _ in
-                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), ignoreFullSize: true)
+                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), ignoreFullSize: true, synchronousLoad: synchronousLoad)
+                                    |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                 }
                             }
                             
@@ -1029,7 +1048,8 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                         } else if let file = media as? TelegramMediaFile {
                             if isSecretMedia {
                                 updateImageSignal = { synchronousLoad, _ in
-                                    return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file))
+                                    return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), synchronousLoad: synchronousLoad)
+                                    |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                 }
                             } else {
                                 if file.isAnimatedSticker {
@@ -1047,7 +1067,8 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                                         return mediaGridMessageVideo(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), onlyFullSize: currentMedia?.id?.namespace == Namespaces.Media.LocalFile, autoFetchFullSizeThumbnail: true)
                                     }
                                     updateBlurredImageSignal = { synchronousLoad, _ in
-                                        return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file))
+                                        return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), synchronousLoad: synchronousLoad)
+                                        |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                     }
                                 }
                             }
