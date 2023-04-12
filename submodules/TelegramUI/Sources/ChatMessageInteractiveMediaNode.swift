@@ -1008,6 +1008,7 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                             } else {
                                 updateImageSignal = { synchronousLoad, highQuality in
                                     return chatMessagePhoto(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), synchronousLoad: synchronousLoad, highQuality: highQuality)
+                                    |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                 }
                                 updateBlurredImageSignal = { synchronousLoad, _ in
                                     return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), ignoreFullSize: true, synchronousLoad: synchronousLoad)
@@ -1036,6 +1037,7 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                             }
                             updateImageSignal = { synchronousLoad, _ in
                                 return chatWebFileImage(account: context.account, file: image)
+                                |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                             }
                             
                             updatedFetchControls = FetchControls(fetch: { _ in
@@ -1056,15 +1058,18 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                                     let dimensions = file.dimensions ?? PixelDimensions(width: 512, height: 512)
                                     updateImageSignal = { synchronousLoad, _ in
                                         return chatMessageAnimatedSticker(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), file: file, small: false, size: dimensions.cgSize.aspectFitted(CGSize(width: 400.0, height: 400.0)))
+                                        |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                     }
                                 } else if file.isSticker || file.isVideoSticker {
                                     updateImageSignal = { synchronousLoad, _ in
                                         return chatMessageSticker(account: context.account, userLocation: .peer(message.id.peerId), file: file, small: false)
+                                        |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                     }
                                 } else {
                                     onlyFullSizeVideoThumbnail = isSendingUpdated
                                     updateImageSignal = { synchronousLoad, _ in
                                         return mediaGridMessageVideo(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), onlyFullSize: currentMedia?.id?.namespace == Namespaces.Media.LocalFile, autoFetchFullSizeThumbnail: true)
+                                        |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                     }
                                     updateBlurredImageSignal = { synchronousLoad, _ in
                                         return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), synchronousLoad: synchronousLoad)
@@ -1423,7 +1428,9 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                             
                             if let updatedStatusSignal = updatedStatusSignal {
                                 strongSelf.statusDisposable.set((updatedStatusSignal
-                                |> deliverOnMainQueue).start(next: { [weak strongSelf] status, actualFetchStatus in
+                                                                 |> runOnMediaQueue(attemptSynchronously: synchronousLoads)
+                                                                 |> deliverOnMainQueue
+                                                                ).start(next: { [weak strongSelf] status, actualFetchStatus in
                                     displayLinkDispatcher.dispatch {
                                         if let strongSelf = strongSelf {
                                             strongSelf.fetchStatus = status
@@ -1436,7 +1443,9 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                             
                             if let updatedVideoNodeReadySignal = updatedVideoNodeReadySignal {
                                 strongSelf.videoNodeReadyDisposable.set((updatedVideoNodeReadySignal
-                                |> deliverOnMainQueue).start(next: { [weak strongSelf] status in
+                                                                         |> runOnMediaQueue(attemptSynchronously: synchronousLoads)
+                                                                         |> deliverOnMainQueue
+                                                                        ).start(next: { [weak strongSelf] status in
                                     displayLinkDispatcher.dispatch {
                                         if let strongSelf = strongSelf, let videoNode = strongSelf.videoNode {
                                             strongSelf.pinchContainerNode.contentNode.insertSubnode(videoNode, aboveSubnode: strongSelf.imageNode)
@@ -1447,7 +1456,9 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                             
                             if let updatedPlayerStatusSignal = updatedPlayerStatusSignal {
                                 strongSelf.playerStatusDisposable.set((updatedPlayerStatusSignal
-                                |> deliverOnMainQueue).start(next: { [weak strongSelf] status in
+                                                                       |> runOnMediaQueue(attemptSynchronously: synchronousLoads)
+                                                                       |> deliverOnMainQueue
+                                                                      ).start(next: { [weak strongSelf] status in
                                     displayLinkDispatcher.dispatch {
                                         if let strongSelf = strongSelf {
                                             strongSelf.playerStatus = status
