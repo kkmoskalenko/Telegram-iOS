@@ -53,6 +53,52 @@ private final class ChatMessageBubbleClippingNode: ASDisplayNode {
     }
 }
 
+private final class DisplaySynchronizer {
+    
+    private var uiTasks: [() -> Void] = []
+    
+    private lazy var displayLink: CADisplayLink = {
+        let displayLink = CADisplayLink(target: self, selector: #selector(performUITasks))
+        if #available(iOS 15.0, *), UIScreen.main.maximumFramesPerSecond > 60 {
+            displayLink.preferredFrameRateRange = CAFrameRateRange(minimum: 30.0, maximum: 120.0, preferred: 120.0)
+        }
+        displayLink.isPaused = true
+        displayLink.add(to: .main, forMode: .common)
+        return displayLink
+    }()
+    
+    deinit {
+        self.displayLink.invalidate()
+    }
+    
+    @objc private func performUITasks() {
+        guard !self.uiTasks.isEmpty else {
+            self.displayLink.isPaused = true
+            return
+        }
+        
+        let allowedDuration = self.displayLink.duration / 2.0
+        let deadline = self.displayLink.targetTimestamp
+        var hasExecuted = false
+        
+        while !self.uiTasks.isEmpty, !hasExecuted || CACurrentMediaTime() + allowedDuration < deadline {
+            let task = self.uiTasks.removeFirst()
+            Queue.mainQueue().async(task)
+            
+            hasExecuted = true
+        }
+    }
+    
+    fileprivate func scheduleUITask(synchronously: Bool, task: @escaping () -> Void) {
+        if synchronously {
+            task()
+        } else {
+            self.uiTasks.append(task)
+            self.displayLink.isPaused = false
+        }
+    }
+}
+
 func hasCommentButton(item: ChatMessageItem) -> Bool {
     let firstMessage = item.content.firstMessage
     
@@ -538,6 +584,8 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewItemNode
     private var tapRecognizer: TapLongTapOrDoubleTapGestureRecognizer?
     
     private var currentSwipeAction: ChatControllerInteractionSwipeAction?
+    
+    private static let synchronizer = DisplaySynchronizer()
     
     //private let debugNode: ASDisplayNode
     
@@ -1071,8 +1119,6 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewItemNode
         for contentNode in self.contentNodes {
             if let message = contentNode.item?.message {
                 currentContentClassesPropertiesAndLayouts.append((message, type(of: contentNode) as AnyClass, contentNode.supportsMosaic, contentNode.asyncLayoutContent()))
-            } else {
-                assertionFailure()
             }
         }
         
@@ -2452,51 +2498,53 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewItemNode
         let disablesComments = !hasInstantVideo
         
         return (layout, { animation, applyInfo, synchronousLoads in
-            return ChatMessageBubbleItemNode.applyLayout(selfReference: selfReference, animation, synchronousLoads,
-                params: params,
-                applyInfo: applyInfo,
-                layout: layout,
-                item: item,
-                forwardSource: forwardSource,
-                forwardAuthorSignature: forwardAuthorSignature,
-                accessibilityData: accessibilityData,
-                actionButtonsSizeAndApply: actionButtonsSizeAndApply,
-                reactionButtonsSizeAndApply: reactionButtonsSizeAndApply,
-                updatedMergedTop: updatedMergedTop,
-                updatedMergedBottom: updatedMergedBottom,
-                hideBackground: hideBackground,
-                incoming: incoming,
-                graphics: graphics,
-                presentationContext: item.controllerInteraction.presentationContext,
-                bubbleContentWidth: bubbleContentWidth,
-                backgroundFrame: backgroundFrame,
-                deliveryFailedInset: deliveryFailedInset,
-                nameNodeSizeApply: nameNodeSizeApply,
-                contentOrigin: contentOrigin,
-                nameNodeOriginY: nameNodeOriginY,
-                layoutConstants: layoutConstants,
-                currentCredibilityIcon: currentCredibilityIcon,
-                adminNodeSizeApply: adminNodeSizeApply,
-                contentUpperRightCorner: contentUpperRightCorner,
-                threadInfoSizeApply: threadInfoSizeApply,
-                threadInfoOriginY: threadInfoOriginY,
-                forwardInfoSizeApply: forwardInfoSizeApply,
-                forwardInfoOriginY: forwardInfoOriginY,
-                replyInfoSizeApply: replyInfoSizeApply,
-                replyInfoOriginY: replyInfoOriginY,
-                removedContentNodeIndices: removedContentNodeIndices,
-                addedContentNodes: addedContentNodes,
-                contentNodeMessagesAndClasses: contentNodeMessagesAndClasses,
-                contentNodeFramesPropertiesAndApply: contentNodeFramesPropertiesAndApply,
-                contentContainerNodeFrames: contentContainerNodeFrames,
-                mosaicStatusOrigin: mosaicStatusOrigin,
-                mosaicStatusSizeAndApply: mosaicStatusSizeAndApply,
-                needsShareButton: needsShareButton,
-                shareButtonOffset: shareButtonOffset,
-                avatarOffset: avatarOffset,
-                hidesHeaders: hidesHeaders,
-                disablesComments: disablesComments
-            )
+            Self.synchronizer.scheduleUITask(synchronously: synchronousLoads || animation.isAnimated) {
+                ChatMessageBubbleItemNode.applyLayout(selfReference: selfReference, animation, synchronousLoads,
+                    params: params,
+                    applyInfo: applyInfo,
+                    layout: layout,
+                    item: item,
+                    forwardSource: forwardSource,
+                    forwardAuthorSignature: forwardAuthorSignature,
+                    accessibilityData: accessibilityData,
+                    actionButtonsSizeAndApply: actionButtonsSizeAndApply,
+                    reactionButtonsSizeAndApply: reactionButtonsSizeAndApply,
+                    updatedMergedTop: updatedMergedTop,
+                    updatedMergedBottom: updatedMergedBottom,
+                    hideBackground: hideBackground,
+                    incoming: incoming,
+                    graphics: graphics,
+                    presentationContext: item.controllerInteraction.presentationContext,
+                    bubbleContentWidth: bubbleContentWidth,
+                    backgroundFrame: backgroundFrame,
+                    deliveryFailedInset: deliveryFailedInset,
+                    nameNodeSizeApply: nameNodeSizeApply,
+                    contentOrigin: contentOrigin,
+                    nameNodeOriginY: nameNodeOriginY,
+                    layoutConstants: layoutConstants,
+                    currentCredibilityIcon: currentCredibilityIcon,
+                    adminNodeSizeApply: adminNodeSizeApply,
+                    contentUpperRightCorner: contentUpperRightCorner,
+                    threadInfoSizeApply: threadInfoSizeApply,
+                    threadInfoOriginY: threadInfoOriginY,
+                    forwardInfoSizeApply: forwardInfoSizeApply,
+                    forwardInfoOriginY: forwardInfoOriginY,
+                    replyInfoSizeApply: replyInfoSizeApply,
+                    replyInfoOriginY: replyInfoOriginY,
+                    removedContentNodeIndices: removedContentNodeIndices,
+                    addedContentNodes: addedContentNodes,
+                    contentNodeMessagesAndClasses: contentNodeMessagesAndClasses,
+                    contentNodeFramesPropertiesAndApply: contentNodeFramesPropertiesAndApply,
+                    contentContainerNodeFrames: contentContainerNodeFrames,
+                    mosaicStatusOrigin: mosaicStatusOrigin,
+                    mosaicStatusSizeAndApply: mosaicStatusSizeAndApply,
+                    needsShareButton: needsShareButton,
+                    shareButtonOffset: shareButtonOffset,
+                    avatarOffset: avatarOffset,
+                    hidesHeaders: hidesHeaders,
+                    disablesComments: disablesComments
+                )
+            }
         })
     }
     
@@ -3096,15 +3144,15 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewItemNode
                 }
             }
             
-            assert(sortedContentNodes.count == updatedContentNodes.count)
-            
             strongSelf.contentNodes = sortedContentNodes
         }
         
         var shouldClipOnTransitions = true
         var contentNodeIndex = 0
         for (relativeFrame, _, useContentOrigin, apply) in contentNodeFramesPropertiesAndApply {
-            apply(animation, synchronousLoads, applyInfo)
+            Self.synchronizer.scheduleUITask(synchronously: synchronousLoads || animation.isAnimated) {
+                apply(animation, synchronousLoads, applyInfo)
+            }
             
             if contentNodeIndex >= strongSelf.contentNodes.count {
                 break
