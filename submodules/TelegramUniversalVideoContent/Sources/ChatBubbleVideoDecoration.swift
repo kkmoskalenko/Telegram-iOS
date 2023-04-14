@@ -38,10 +38,15 @@ public final class ChatBubbleVideoDecoration: UniversalVideoDecoration {
     }
     
     public func updateCorners(_ corners: ImageCorners) {
-        if isRoundEqualCorners(corners) {
-            self.contentContainerNode.cornerRadius = corners.topLeft.radius
+        if let (radius, cornerMask) = corners.layerCorners {
+            self.contentContainerNode.layer.cornerRadius = radius
+            self.contentContainerNode.layer.maskedCorners = cornerMask
             self.contentContainerNode.layer.mask = nil
+            if #available(iOS 13.0, *) {
+                self.contentContainerNode.layer.cornerCurve = .continuous
+            }
         } else {
+            // Else branch should not be called at all
             self.contentContainerNode.cornerRadius = 0
             
             let boundingSize: CGSize = CGSize(width: max(corners.topLeft.radius, corners.bottomLeft.radius) + max(corners.topRight.radius, corners.bottomRight.radius), height: max(corners.topLeft.radius, corners.topRight.radius) + max(corners.bottomLeft.radius, corners.bottomRight.radius))

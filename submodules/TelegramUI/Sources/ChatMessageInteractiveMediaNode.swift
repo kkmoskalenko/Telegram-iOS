@@ -174,6 +174,23 @@ extension UIBezierPath {
     }
 }
 
+private let chatMediaProcessingQueue = Queue(queue: DispatchQueue(label: "ChatMediaProcessingQueue",
+                                                                  qos: .utility,
+                                                                  attributes: .concurrent))
+
+private func runOnMediaQueue<T, E>(attemptSynchronously: Bool = false) -> (Signal<T, E>) -> Signal<T, E> {
+    if attemptSynchronously {
+        return { signal in
+            return signal
+        }
+    } else {
+        return { signal in
+            return signal
+            |> runOn(chatMediaProcessingQueue)
+        }
+    }
+}
+
 private class ExtendedMediaOverlayNode: ASDisplayNode {
     private let blurredImageNode: TransformImageNode
     private let dustNode: MediaDustNode
@@ -280,8 +297,26 @@ private class ExtendedMediaOverlayNode: ASDisplayNode {
                 self.randomId = randomId
                 self.blurredImageNode.setSignal(imageSignal, attemptSynchronously: true)
                 
+                let imageCorners: ImageCorners
+                if let (radius, maskedCorners) = corners?.layerCorners {
+                    imageCorners = ImageCorners()
+                    
+                    self.blurredImageNode.layer.masksToBounds = true
+                    self.blurredImageNode.layer.cornerRadius = radius
+                    self.blurredImageNode.layer.maskedCorners = maskedCorners
+                    if #available(iOS 13.0, *) {
+                        self.blurredImageNode.layer.cornerCurve = .continuous
+                    }
+                } else {
+                    imageCorners = corners ?? ImageCorners()
+                    
+                    self.blurredImageNode.layer.masksToBounds = false
+                    self.blurredImageNode.layer.cornerRadius = .zero
+                    self.blurredImageNode.layer.maskedCorners = []
+                }
+                
                 let imageLayout = self.blurredImageNode.asyncLayout()
-                let arguments = TransformImageArguments(corners: corners ?? ImageCorners(), imageSize: drawingSize, boundingSize: boundingSize, intrinsicInsets: UIEdgeInsets(), resizeMode: .blurBackground, emptyColor: .clear, custom: nil)
+                let arguments = TransformImageArguments(corners: imageCorners, imageSize: drawingSize, boundingSize: boundingSize, intrinsicInsets: UIEdgeInsets(), resizeMode: .blurBackground, emptyColor: .clear, custom: nil)
                 let apply = imageLayout(arguments)
                 apply()
             }
@@ -967,14 +1002,17 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                             }
                             if isSecretMedia {
                                 updateImageSignal = { synchronousLoad, _ in
-                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image))
+                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), synchronousLoad: synchronousLoad)
+                                    |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                 }
                             } else {
                                 updateImageSignal = { synchronousLoad, highQuality in
                                     return chatMessagePhoto(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), synchronousLoad: synchronousLoad, highQuality: highQuality)
+                                    |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                 }
                                 updateBlurredImageSignal = { synchronousLoad, _ in
-                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), ignoreFullSize: true, synchronousLoad: true)
+                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), ignoreFullSize: true, synchronousLoad: synchronousLoad)
+                                    |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                 }
                             }
                             
@@ -999,6 +1037,7 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                             }
                             updateImageSignal = { synchronousLoad, _ in
                                 return chatWebFileImage(account: context.account, file: image)
+                                |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                             }
                             
                             updatedFetchControls = FetchControls(fetch: { _ in
@@ -1011,25 +1050,30 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                         } else if let file = media as? TelegramMediaFile {
                             if isSecretMedia {
                                 updateImageSignal = { synchronousLoad, _ in
-                                    return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file))
+                                    return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), synchronousLoad: synchronousLoad)
+                                    |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                 }
                             } else {
                                 if file.isAnimatedSticker {
                                     let dimensions = file.dimensions ?? PixelDimensions(width: 512, height: 512)
                                     updateImageSignal = { synchronousLoad, _ in
                                         return chatMessageAnimatedSticker(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), file: file, small: false, size: dimensions.cgSize.aspectFitted(CGSize(width: 400.0, height: 400.0)))
+                                        |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                     }
                                 } else if file.isSticker || file.isVideoSticker {
                                     updateImageSignal = { synchronousLoad, _ in
                                         return chatMessageSticker(account: context.account, userLocation: .peer(message.id.peerId), file: file, small: false)
+                                        |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                     }
                                 } else {
                                     onlyFullSizeVideoThumbnail = isSendingUpdated
                                     updateImageSignal = { synchronousLoad, _ in
                                         return mediaGridMessageVideo(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), onlyFullSize: currentMedia?.id?.namespace == Namespaces.Media.LocalFile, autoFetchFullSizeThumbnail: true)
+                                        |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                     }
                                     updateBlurredImageSignal = { synchronousLoad, _ in
-                                        return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), synchronousLoad: true)
+                                        return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), synchronousLoad: synchronousLoad)
+                                        |> runOnMediaQueue(attemptSynchronously: synchronousLoad)
                                     }
                                 }
                             }
@@ -1384,7 +1428,9 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                             
                             if let updatedStatusSignal = updatedStatusSignal {
                                 strongSelf.statusDisposable.set((updatedStatusSignal
-                                |> deliverOnMainQueue).start(next: { [weak strongSelf] status, actualFetchStatus in
+                                                                 |> runOnMediaQueue(attemptSynchronously: synchronousLoads)
+                                                                 |> deliverOnMainQueue
+                                                                ).start(next: { [weak strongSelf] status, actualFetchStatus in
                                     displayLinkDispatcher.dispatch {
                                         if let strongSelf = strongSelf {
                                             strongSelf.fetchStatus = status
@@ -1397,7 +1443,9 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                             
                             if let updatedVideoNodeReadySignal = updatedVideoNodeReadySignal {
                                 strongSelf.videoNodeReadyDisposable.set((updatedVideoNodeReadySignal
-                                |> deliverOnMainQueue).start(next: { [weak strongSelf] status in
+                                                                         |> runOnMediaQueue(attemptSynchronously: synchronousLoads)
+                                                                         |> deliverOnMainQueue
+                                                                        ).start(next: { [weak strongSelf] status in
                                     displayLinkDispatcher.dispatch {
                                         if let strongSelf = strongSelf, let videoNode = strongSelf.videoNode {
                                             strongSelf.pinchContainerNode.contentNode.insertSubnode(videoNode, aboveSubnode: strongSelf.imageNode)
@@ -1408,7 +1456,9 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                             
                             if let updatedPlayerStatusSignal = updatedPlayerStatusSignal {
                                 strongSelf.playerStatusDisposable.set((updatedPlayerStatusSignal
-                                |> deliverOnMainQueue).start(next: { [weak strongSelf] status in
+                                                                       |> runOnMediaQueue(attemptSynchronously: synchronousLoads)
+                                                                       |> deliverOnMainQueue
+                                                                      ).start(next: { [weak strongSelf] status in
                                     displayLinkDispatcher.dispatch {
                                         if let strongSelf = strongSelf {
                                             strongSelf.playerStatus = status
@@ -1906,7 +1956,6 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                 self.extendedMediaOverlayNode = extendedMediaOverlayNode
                 self.pinchContainerNode.contentNode.insertSubnode(extendedMediaOverlayNode, aboveSubnode: self.imageNode)
             }
-            self.extendedMediaOverlayNode?.frame = self.imageNode.frame
             
             var tappable = false
             switch state {
@@ -1932,7 +1981,11 @@ final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTransitio
                     break
                 }
             }
-            self.extendedMediaOverlayNode?.update(size: self.imageNode.frame.size, text: paymentText, imageSignal: self.currentBlurredImageSignal, imageFrame: self.imageNode.view.convert(self.imageNode.bounds, to: self.extendedMediaOverlayNode?.view), corners: self.currentImageArguments?.corners)
+            
+            if self.extendedMediaOverlayNode?.frame != self.imageNode.frame {
+                self.extendedMediaOverlayNode?.frame = self.imageNode.frame
+                self.extendedMediaOverlayNode?.update(size: self.imageNode.frame.size, text: paymentText, imageSignal: self.currentBlurredImageSignal, imageFrame: self.imageNode.view.convert(self.imageNode.bounds, to: self.extendedMediaOverlayNode?.view), corners: self.currentImageArguments?.corners)
+            }
         } else if let extendedMediaOverlayNode = self.extendedMediaOverlayNode {
             self.extendedMediaOverlayNode = nil
             extendedMediaOverlayNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false, completion: { [weak extendedMediaOverlayNode] _ in
