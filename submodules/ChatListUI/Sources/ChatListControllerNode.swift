@@ -2425,6 +2425,18 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
         }
         self.updateNavigationScrolling(navigationHeight: containerLayout.navigationBarHeight, transition: self.tempNavigationScrollingTransition ?? .immediate)
         
+        let overscrollAmount: CGFloat
+        if case .known(let value) = offset, value + listView.tempTopInset < 0.0 {
+            overscrollAmount = abs(value + listView.tempTopInset)
+        } else {
+            overscrollAmount = 0.0
+        }
+        if isPrimary {
+            self.mainContainerNode.currentItemNode.updateOverscrollAmount(overscrollAmount, isDragging: listView.isDragging)
+        } else {
+            self.inlineStackContainerNode?.currentItemNode.updateOverscrollAmount(overscrollAmount, isDragging: listView.isDragging)
+        }
+        
         if listView.isDragging {
             var overscrollSelectedId: EnginePeer.Id?
             var overscrollHiddenChatItemsAllowed = false

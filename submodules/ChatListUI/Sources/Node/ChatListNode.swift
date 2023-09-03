@@ -624,7 +624,7 @@ private func mappedInsertEntries(context: AccountContext, nodeInteraction: ChatL
             case let .HoleEntry(_, theme):
                 return ListViewInsertItem(index: entry.index, previousIndex: entry.previousIndex, item: ChatListHoleItem(theme: theme), directionHint: entry.directionHint)
             case let .GroupReferenceEntry(groupReferenceEntry):
-                return ListViewInsertItem(index: entry.index, previousIndex: entry.previousIndex, item: ChatListItem(
+                let chatListItem = ChatListItem(
                     presentationData: groupReferenceEntry.presentationData,
                     context: context,
                     chatListLocation: location,
@@ -650,7 +650,13 @@ private func mappedInsertEntries(context: AccountContext, nodeInteraction: ChatL
                     enableContextActions: true,
                     hiddenOffset: groupReferenceEntry.hiddenByDefault && !groupReferenceEntry.revealed,
                     interaction: nodeInteraction
-                ), directionHint: entry.directionHint)
+                )
+                if groupReferenceEntry.groupId == .archive {
+                    let archiveItem = ChatListArchivePullItem(chatListItem: chatListItem)
+                    return ListViewInsertItem(index: entry.index, previousIndex: entry.previousIndex, item: archiveItem, directionHint: entry.directionHint)
+                } else {
+                    return ListViewInsertItem(index: entry.index, previousIndex: entry.previousIndex, item: chatListItem, directionHint: entry.directionHint)
+                }
             case let .ContactEntry(contactEntry):
                 let header: ChatListSearchItemHeader? = nil
                 
@@ -935,33 +941,39 @@ private func mappedUpdateEntries(context: AccountContext, nodeInteraction: ChatL
             case let .HoleEntry(_, theme):
                 return ListViewUpdateItem(index: entry.index, previousIndex: entry.previousIndex, item: ChatListHoleItem(theme: theme), directionHint: entry.directionHint)
             case let .GroupReferenceEntry(groupReferenceEntry):
-                return ListViewUpdateItem(index: entry.index, previousIndex: entry.previousIndex, item: ChatListItem(
-                        presentationData: groupReferenceEntry.presentationData,
-                        context: context,
-                        chatListLocation: location,
-                        filterData: filterData,
-                        index: groupReferenceEntry.index,
-                        content: .groupReference(ChatListItemContent.GroupReferenceData(
-                            groupId: groupReferenceEntry.groupId,
-                            peers: groupReferenceEntry.peers,
-                            message: groupReferenceEntry.message,
-                            unreadCount: groupReferenceEntry.unreadCount,
-                            hiddenByDefault: groupReferenceEntry.hiddenByDefault,
-                            storyState: groupReferenceEntry.storyState.flatMap { storyState in
-                                return ChatListItemContent.StoryState(
-                                    stats: storyState.stats,
-                                    hasUnseenCloseFriends: storyState.hasUnseenCloseFriends
-                                )
-                            }
-                        )),
-                        editing: groupReferenceEntry.editing,
-                        hasActiveRevealControls: false,
-                        selected: false,
-                        header: nil,
-                        enableContextActions: true,
-                        hiddenOffset: groupReferenceEntry.hiddenByDefault && !groupReferenceEntry.revealed,
-                        interaction: nodeInteraction
-                ), directionHint: entry.directionHint)
+                let chatListItem = ChatListItem(
+                    presentationData: groupReferenceEntry.presentationData,
+                    context: context,
+                    chatListLocation: location,
+                    filterData: filterData,
+                    index: groupReferenceEntry.index,
+                    content: .groupReference(ChatListItemContent.GroupReferenceData(
+                        groupId: groupReferenceEntry.groupId,
+                        peers: groupReferenceEntry.peers,
+                        message: groupReferenceEntry.message,
+                        unreadCount: groupReferenceEntry.unreadCount,
+                        hiddenByDefault: groupReferenceEntry.hiddenByDefault,
+                        storyState: groupReferenceEntry.storyState.flatMap { storyState in
+                            return ChatListItemContent.StoryState(
+                                stats: storyState.stats,
+                                hasUnseenCloseFriends: storyState.hasUnseenCloseFriends
+                            )
+                        }
+                    )),
+                    editing: groupReferenceEntry.editing,
+                    hasActiveRevealControls: false,
+                    selected: false,
+                    header: nil,
+                    enableContextActions: true,
+                    hiddenOffset: groupReferenceEntry.hiddenByDefault && !groupReferenceEntry.revealed,
+                    interaction: nodeInteraction
+                )
+                if groupReferenceEntry.groupId == .archive {
+                    let archiveItem = ChatListArchivePullItem(chatListItem: chatListItem)
+                    return ListViewUpdateItem(index: entry.index, previousIndex: entry.previousIndex, item: archiveItem, directionHint: entry.directionHint)
+                } else {
+                    return ListViewUpdateItem(index: entry.index, previousIndex: entry.previousIndex, item: chatListItem, directionHint: entry.directionHint)
+                }
             case let .ContactEntry(contactEntry):
                 let header: ChatListSearchItemHeader? = nil
                 
@@ -2887,6 +2899,13 @@ public final class ChatListNode: ListView {
         if filter?.id != self.chatListFilter?.id {
             self.chatListFilter = filter
             self.resetFilter()
+        }
+    }
+    
+    func updateOverscrollAmount(_ amount: CGFloat, isDragging: Bool) {
+        self.forEachItemNode { itemNode in
+            guard let itemNode = itemNode as? ChatListArchivePullItemNode else { return }
+            itemNode.updateOverscrollAmount(amount, isDragging: isDragging)
         }
     }
     
