@@ -611,6 +611,9 @@ def build(bazel, arguments):
     elif arguments.cacheHost is not None:
         bazel_command_line.add_remote_cache(arguments.cacheHost)
 
+    if arguments.disableProvisioningProfiles is not None:
+        bazel_command_line.disable_provisioning_profiles = arguments.disableProvisioningProfiles
+
     resolve_configuration(
         base_path=os.getcwd(),
         bazel_command_line=bazel_command_line,
@@ -988,6 +991,15 @@ if __name__ == '__main__':
         action='store_true',
         default=False,
         help='Continue build process after an error.',
+    )
+    buildParser.add_argument(
+        '--disableProvisioningProfiles',
+        action='store_true',
+        default=False,
+        help='''
+            This allows to build the project for simulator without having any codesigning identities installed.
+            Building for an actual device will fail.
+            '''
     )
     buildParser.add_argument(
         '--showActions',
