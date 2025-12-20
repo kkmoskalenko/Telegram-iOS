@@ -34,7 +34,7 @@ extension LiquidGlassArguments {
         shapeRadius: Float = 80,
         shapeRoundness: Float = 5,
         mergeRate: Float = 0.05,
-        showShape1: Bool = true,
+        showShape1: Bool = false,
         step: Int32 = 9
     ) -> LiquidGlassArguments {
         LiquidGlassArguments(

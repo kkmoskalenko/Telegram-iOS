@@ -1,8 +1,10 @@
 import Foundation
 import UIKit
+import MetalKit
 import Display
 import ComponentFlow
 import GlassBackgroundComponent
+import LiquidLensSharedTypes
 
 private final class RestingBackgroundView: UIVisualEffectView {
     var isDark: Bool?
@@ -97,6 +99,11 @@ public final class LiquidLensView: UIView {
     private var legacyContentMaskView: UIView?
     private var legacyContentMaskBlobView: UIImageView?
     private var legacyLiftedContentBlobMaskView: UIImageView?
+    
+    private var legacyLiquidGlassRenderer: LiquidGlassRenderer?
+    private var legacyLiquidGlassView: MTKView?
+    private var legacyContentTexture: MTLTexture?
+    private var legacySelectedContentTexture: MTLTexture?
 
     public var selectedContentView: UIView {
         return self.liftedContainerView
@@ -216,6 +223,8 @@ public final class LiquidLensView: UIView {
             self.liftedContainerView.mask = legacyLiftedContentBlobMaskView
             
             self.containerView.addSubview(self.liftedContainerView)
+            
+            self.setupLiquidGlassView()
         }
     }
 
@@ -315,6 +324,7 @@ public final class LiquidLensView: UIView {
     private func update(params: Params, transition: ComponentTransition) {
         let isFirstTime = self.params == nil
         let transition: ComponentTransition = isFirstTime ? .immediate : transition
+        let contentChanged = params.size != self.params?.size || params.isDark != self.params?.isDark
 
         self.params = params
 
@@ -351,6 +361,30 @@ public final class LiquidLensView: UIView {
             legacySelectionView.tintColor = UIColor(white: params.isDark ? 1.0 : 0.0, alpha: params.isDark ? 0.1 : 0.075)
             transition.setFrame(view: legacySelectionView, frame: effectiveLensFrame)
         }
+        if let legacyLiquidGlassView = self.legacyLiquidGlassView {
+            transition.setFrame(view: legacyLiquidGlassView, frame: CGRect(origin: CGPoint(), size: params.size))
+            
+            // TODO: Animate lens transition
+            legacyLiquidGlassView.isHidden = !params.isLifted
+            self.contentView.isHidden = params.isLifted
+            self.liftedContainerView.isHidden = params.isLifted
+            self.legacySelectionView?.isHidden = params.isLifted
+            
+            if params.isLifted {
+                let lensFrame = baseLensFrame.insetBy(dx: 2.0, dy: 2.0)
+                self.updateLiquidGlassRenderer(lensFrame: lensFrame)
+            }
+            
+            if contentChanged {
+                DispatchQueue.main.async { [weak self] in
+                    self?.updateContentSnapshots(size: params.size)
+                    if params.isLifted {
+                        let lensFrame = baseLensFrame.insetBy(dx: 2.0, dy: 2.0)
+                        self?.updateLiquidGlassRenderer(lensFrame: lensFrame)
+                    }
+                }
+            }
+        }
 
         transition.setFrame(view: self.restingBackgroundView, frame: CGRect(origin: CGPoint(), size: params.size))
         self.restingBackgroundView.update(isDark: params.isDark)
@@ -368,6 +402,95 @@ public final class LiquidLensView: UIView {
         } else if let liftedDisplayLink = self.liftedDisplayLink {
             self.liftedDisplayLink = nil
             liftedDisplayLink.invalidate()
+        }
+    }
+}
+
+// MARK: - Liquid Glass Effect with Metal
+
+extension LiquidLensView {
+    
+    private func setupLiquidGlassView(pixelFormat: MTLPixelFormat = .bgra8Unorm) {
+        guard let device = MTLCreateSystemDefaultDevice(),
+              let renderer = try? LiquidGlassRenderer(with: device, pixelFormat: pixelFormat)
+        else {
+            assertionFailure("Renderer creation failed")
+            return
+        }
+        
+        let view = MTKView(frame: .zero, device: device)
+        view.delegate = renderer
+        view.colorPixelFormat = pixelFormat
+        view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        view.isPaused = true
+        view.enableSetNeedsDisplay = true
+        view.isOpaque = false
+        
+        self.legacyLiquidGlassView = view
+        self.legacyLiquidGlassRenderer = renderer
+        
+        self.containerView.addSubview(view)
+    }
+    
+    private func updateLiquidGlassRenderer(lensFrame: CGRect) {
+        guard let view = self.legacyLiquidGlassView,
+              let renderer = self.legacyLiquidGlassRenderer,
+              let bgTexture = self.legacyContentTexture,
+              let bgOverlayTexture = self.legacySelectedContentTexture
+        else { return }
+        
+        let resolution: SIMD2<Float> = [Float(view.drawableSize.width), Float(view.drawableSize.height)]
+        let dpr = Float(view.contentScaleFactor)
+        
+        let lensPosition: SIMD2<Float> = dpr * [Float(lensFrame.midX), Float(lensFrame.midY)]
+        let lensWidth = Float(lensFrame.width)
+        let lensHeight = Float(lensFrame.height)
+        
+        let arguments = LiquidGlassArguments.default(
+            resolution: resolution,
+            dpr: dpr,
+            mouse: lensPosition,
+            mouseSpring: lensPosition,
+            shadowExpand: 8.0,
+            shadowFactor: 0.1,
+            shadowPosition: [0.0, -8.0],
+            shapeWidth: lensWidth,
+            shapeHeight: lensHeight,
+            shapeRadius: 0.5 * lensHeight,
+            shapeRoundness: 2.0
+        )
+        
+        renderer.update(view: view, backgroundTexture: bgTexture, backgroundOverlayTexture: bgOverlayTexture, arguments: arguments)
+    }
+    
+    public func updateContentSnapshots(size: CGSize) {
+        guard let renderer = self.legacyLiquidGlassRenderer else { return }
+        
+        // TODO: Render directly into MTLTexture memory
+        let format = UIGraphicsImageRendererFormat()
+        format.preferredRange = .standard
+        
+        let imageRenderer = UIGraphicsImageRenderer(size: size, format: format)
+        
+        func renderSubviews(of view: UIView) -> UIImage {
+            imageRenderer.image { context in
+                for subview in view.subviews {
+                    context.cgContext.saveGState()
+                    context.cgContext.translateBy(x: subview.frame.origin.x, y: subview.frame.origin.y)
+                    subview.layer.render(in: context.cgContext)
+                    context.cgContext.restoreGState()
+                }
+            }
+        }
+        
+        let defaultImage = renderSubviews(of: self.contentView)
+        let selectedImage = renderSubviews(of: self.liftedContainerView)
+        
+        do {
+            self.legacyContentTexture = try renderer.loadTexture(from: defaultImage.cgImage!)
+            self.legacySelectedContentTexture = try renderer.loadTexture(from: selectedImage.cgImage!)
+        } catch {
+            assertionFailure("Texture creation failed: \(error)")
         }
     }
 }

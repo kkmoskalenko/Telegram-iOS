@@ -430,14 +430,18 @@ public final class TabBarComponent: Component {
                     if itemComponentView.superview == nil {
                         itemComponentView.isUserInteractionEnabled = false
                         selectedItemComponentView.isUserInteractionEnabled = false
+                        
+                        itemComponentView.onItemChanged = { [weak self] in
+                            DispatchQueue.main.async {
+                                self?.liquidLensView.updateContentSnapshots(size: size)
+                            }
+                        }
 
                         self.liquidLensView.contentView.addSubview(itemComponentView)
                         self.liquidLensView.selectedContentView.addSubview(selectedItemComponentView)
                     }
                     itemTransition.setFrame(view: itemComponentView, frame: itemFrame)
-                    itemTransition.setPosition(view: selectedItemComponentView, position: itemFrame.center)
-                    itemTransition.setBounds(view: selectedItemComponentView, bounds: CGRect(origin: CGPoint(), size: itemFrame.size))
-                    itemTransition.setScale(view: selectedItemComponentView, scale: self.selectionGestureState != nil ? 1.15 : 1.0)
+                    itemTransition.setFrame(view: selectedItemComponentView, frame: itemFrame)
                     
                     if let previousComponent, previousComponent.selectedId != item.id, isItemSelected {
                         itemComponentView.playSelectionAnimation()
@@ -476,6 +480,11 @@ public final class TabBarComponent: Component {
             }
 
             self.liquidLensView.update(size: size, selectionX: lensSelection.x, selectionWidth: lensSelection.width, isDark: component.theme.overallDarkAppearance, isLifted: self.selectionGestureState != nil, transition: transition)
+            if let previousComponent, previousComponent.theme != component.theme || previousComponent.items != component.items {
+                DispatchQueue.main.async { [weak self] in
+                    self?.liquidLensView.updateContentSnapshots(size: size)
+                }
+            }
 
             return size
         }
@@ -529,6 +538,8 @@ private final class ItemComponent: Component {
         private var setSelectedImageListener: Int?
         private var setBadgeListener: Int?
         
+        var onItemChanged: (() -> Void)?
+        
         override init(frame: CGRect) {
             self.contextContainerView = ContextExtractedContentContainingView()
             
@@ -579,18 +590,21 @@ private final class ItemComponent: Component {
                         return
                     }
                     self.state?.updated(transition: .immediate, isLocal: true)
+                    self.onItemChanged?()
                 }
                 self.setSelectedImageListener = component.item.item.addSetSelectedImageListener { [weak self] _ in
                     guard let self else {
                         return
                     }
                     self.state?.updated(transition: .immediate, isLocal: true)
+                    self.onItemChanged?()
                 }
                 self.setBadgeListener = UITabBarItem_addSetBadgeListener(component.item.item) { [weak self] _ in
                     guard let self else {
                         return
                     }
                     self.state?.updated(transition: .immediate, isLocal: true)
+                    self.onItemChanged?()
                 }
             }
             
