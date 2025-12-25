@@ -102,8 +102,10 @@ public final class LiquidLensView: UIView {
     
     private var legacyLiquidGlassRenderer: LiquidGlassRenderer?
     private var legacyLiquidGlassView: MTKView?
+    private var legacyLiquidGlassViewEdgeInsets: UIEdgeInsets = .zero
     private var legacyContentTexture: MTLTexture?
     private var legacySelectedContentTexture: MTLTexture?
+    private var legacyDragAnimator: DragAnimator?
 
     public var selectedContentView: UIView {
         return self.liftedContainerView
@@ -324,14 +326,15 @@ public final class LiquidLensView: UIView {
     private func update(params: Params, transition: ComponentTransition) {
         let isFirstTime = self.params == nil
         let transition: ComponentTransition = isFirstTime ? .immediate : transition
-        let contentChanged = params.size != self.params?.size || params.isDark != self.params?.isDark
 
+        let previousParams = self.params
         self.params = params
 
         transition.setFrame(view: self.containerView, frame: CGRect(origin: CGPoint(), size: params.size))
         transition.setFrame(view: self.backgroundContainerContainer, frame: CGRect(origin: CGPoint(), size: params.size))
 
-        transition.setFrame(view: self.backgroundContainer, frame: CGRect(origin: CGPoint(), size: params.size))
+        transition.setPosition(view: self.backgroundContainer, position: CGPoint(x: params.size.width * 0.5, y: params.size.height * 0.5))
+        transition.setBounds(view: self.backgroundContainer, bounds: CGRect(origin: CGPoint(), size: params.size))
         self.backgroundContainer.update(size: params.size, isDark: params.isDark, transition: transition)
         
         transition.setFrame(view: self.backgroundView, frame: CGRect(origin: CGPoint(), size: params.size))
@@ -362,7 +365,8 @@ public final class LiquidLensView: UIView {
             transition.setFrame(view: legacySelectionView, frame: effectiveLensFrame)
         }
         if let legacyLiquidGlassView = self.legacyLiquidGlassView {
-            transition.setFrame(view: legacyLiquidGlassView, frame: CGRect(origin: CGPoint(), size: params.size))
+            let legacyLiquidGlassViewFrame = CGRect(origin: CGPoint(), size: params.size).inset(by: legacyLiquidGlassViewEdgeInsets)
+            transition.setFrame(view: legacyLiquidGlassView, frame: legacyLiquidGlassViewFrame)
             
             // TODO: Animate lens transition
             legacyLiquidGlassView.isHidden = !params.isLifted
@@ -370,12 +374,26 @@ public final class LiquidLensView: UIView {
             self.liftedContainerView.isHidden = params.isLifted
             self.legacySelectionView?.isHidden = params.isLifted
             
-            if params.isLifted {
+            if let legacyDragAnimator = self.legacyDragAnimator {
+                if params.isLifted != previousParams?.isLifted {
+                    if params.isLifted {
+                        legacyDragAnimator.press()
+                        transition.setScale(view: self.backgroundContainer, scale: 1.043)
+                    } else {
+                        legacyDragAnimator.release()
+                        transition.setScale(view: self.backgroundContainer, scale: 1.0)
+                    }
+                }
+                if params.selectionX != previousParams?.selectionX {
+                    let selectionXNormalizer = params.size.width - params.selectionWidth
+                    legacyDragAnimator.updateValue(params.selectionX / selectionXNormalizer)
+                }
+            } else {
                 let lensFrame = baseLensFrame.insetBy(dx: 2.0, dy: 2.0)
                 self.updateLiquidGlassRenderer(lensFrame: lensFrame)
             }
             
-            if contentChanged {
+            if params.size != previousParams?.size || params.isDark != previousParams?.isDark {
                 DispatchQueue.main.async { [weak self] in
                     self?.updateContentSnapshots(size: params.size)
                     if params.isLifted {
@@ -425,11 +443,44 @@ extension LiquidLensView {
         view.isPaused = true
         view.enableSetNeedsDisplay = true
         view.isOpaque = false
+        view.layer.zPosition = 10.0
         
-        self.legacyLiquidGlassView = view
         self.legacyLiquidGlassRenderer = renderer
+        self.legacyLiquidGlassView = view
+        self.legacyLiquidGlassViewEdgeInsets = UIEdgeInsets(-20)
         
+        self.backgroundContainer.layer.zPosition = 1.0
         self.containerView.addSubview(view)
+        
+        let dragAnimator = DragAnimator(config: DragAnimator.Config(
+            initialValue: 0.0,
+            valueRange: 0.0...1.0,
+            initialScale: 1.0,
+            // TODO: Verify the scale is correct
+            pressedScale: 78.0 / 56.0
+        ))
+        dragAnimator.stateDidChange = { [weak self] state in
+            guard let self, let params = self.params else { return }
+            
+            var scaleX = state.scaleX
+            var scaleY = state.scaleY
+            
+            let velocity = state.velocity / 10.0
+            scaleX /= 1.0 - (velocity * 0.75).clamped(to: -0.2...0.2)
+            scaleY *= 1.0 - (velocity * 0.25).clamped(to: -0.2...0.2)
+            
+            let selectionXNormalizer = params.size.width - params.selectionWidth
+            let lensFrame = CGRect(x: state.value * selectionXNormalizer,
+                                   y: 0.0,
+                                   width: params.selectionWidth,
+                                   height: params.size.height)
+            
+            let dx = 4.0 + lensFrame.size.width  * (1 - scaleX) / 2
+            let dy = 4.0 + lensFrame.size.height * (1 - scaleY) / 2
+            
+            self.updateLiquidGlassRenderer(lensFrame: lensFrame.insetBy(dx: dx, dy: dy))
+        }
+        self.legacyDragAnimator = dragAnimator
     }
     
     private func updateLiquidGlassRenderer(lensFrame: CGRect) {
@@ -442,7 +493,13 @@ extension LiquidLensView {
         let resolution: SIMD2<Float> = [Float(view.drawableSize.width), Float(view.drawableSize.height)]
         let dpr = Float(view.contentScaleFactor)
         
-        let lensPosition: SIMD2<Float> = dpr * [Float(lensFrame.midX), Float(lensFrame.midY)]
+        let topLeftInset: SIMD2<Float> = dpr * [Float(-self.legacyLiquidGlassViewEdgeInsets.left),
+                                                Float(-self.legacyLiquidGlassViewEdgeInsets.top)]
+        let bottomRightInset: SIMD2<Float> = dpr * [Float(-self.legacyLiquidGlassViewEdgeInsets.right),
+                                                    Float(-self.legacyLiquidGlassViewEdgeInsets.bottom)]
+        let contentSize = resolution - topLeftInset - bottomRightInset
+        
+        let lensPosition: SIMD2<Float> = dpr * [Float(lensFrame.midX), Float(lensFrame.midY)] + topLeftInset
         let lensWidth = Float(lensFrame.width)
         let lensHeight = Float(lensFrame.height)
         
@@ -454,6 +511,8 @@ extension LiquidLensView {
             shadowExpand: 8.0,
             shadowFactor: 0.1,
             shadowPosition: [0.0, -8.0],
+            contentOrigin: topLeftInset,
+            contentSize: contentSize,
             shapeWidth: lensWidth,
             shapeHeight: lensHeight,
             shapeRadius: 0.5 * lensHeight,
