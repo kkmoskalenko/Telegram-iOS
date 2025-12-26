@@ -302,6 +302,7 @@ public class GlassBackgroundView: UIView {
     }
     
     private let backgroundNode: NavigationBackgroundNode?
+    private var interactiveEffectsHandle: InteractiveEffectsHandle?
     
     private let nativeView: UIVisualEffectView?
     private let nativeViewClippingContext: ClippingShapeContext?
@@ -420,11 +421,22 @@ public class GlassBackgroundView: UIView {
         if let backgroundNode = self.backgroundNode {
             backgroundNode.updateColor(color: .clear, forceKeepBlur: tintColor.color.alpha != 1.0, transition: transition.containedViewLayoutTransition)
             
+            let outerCornerRadius: CGFloat
             switch shape {
             case let .roundedRect(cornerRadius):
+                outerCornerRadius = cornerRadius
                 backgroundNode.update(size: size, cornerRadius: cornerRadius, transition: transition.containedViewLayoutTransition)
             }
             transition.setFrame(view: backgroundNode.view, frame: CGRect(origin: CGPoint(), size: size))
+            
+            if self.params?.isInteractive != isInteractive {
+                if isInteractive {
+                    self.interactiveEffectsHandle = self.installInteractiveEffects(cornerRadius: outerCornerRadius)
+                } else {
+                    self.interactiveEffectsHandle?.uninstall()
+                    self.interactiveEffectsHandle = nil
+                }
+            }
         }
         
         let shadowInset: CGFloat = 32.0

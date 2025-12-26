@@ -570,7 +570,8 @@ public final class LocationOptionsComponent: Component {
             
             let effectiveBackgroundFrame = component.showMapModes ? expandedFrame : collapsedFrame
             self.backgroundView.update(size: effectiveBackgroundFrame.size, cornerRadius: cornerRadius, isDark: component.theme.overallDarkAppearance, tintColor: .init(kind: .panel, color: component.theme.rootController.navigationBar.glassBarButtonBackgroundColor), isInteractive: true, transition: transition)
-            transition.setFrame(view: self.backgroundView, frame: effectiveBackgroundFrame)
+            transition.setPosition(view: self.backgroundView, position: CGPoint(x: effectiveBackgroundFrame.midX, y: effectiveBackgroundFrame.midY))
+            transition.setBounds(view: self.backgroundView, bounds: CGRect(origin: CGPoint(), size: effectiveBackgroundFrame.size))
             
             transition.setFrame(view: self.clippingView, frame: effectiveBackgroundFrame)
             

@@ -86,7 +86,8 @@ final class InputIconButtonComponent: Component {
                 self.iconView.frame = image.size.centered(in: CGRect(origin: CGPoint(), size: size))
             }
             
-            transition.setFrame(view: self.backgroundView, frame: CGRect(origin: CGPoint(), size: size))
+            transition.setPosition(view: self.backgroundView, position: CGPoint(x: size.width * 0.5, y: size.height * 0.5))
+            transition.setBounds(view: self.backgroundView, bounds: CGRect(origin: CGPoint(), size: size))
             self.backgroundView.update(size: size, cornerRadius: size.height * 0.5, isDark: component.theme.overallDarkAppearance, tintColor: .init(kind: .panel, color: component.theme.chat.inputPanel.inputBackgroundColor.withMultipliedAlpha(0.7)), isInteractive: true, transition: transition)
             
             self.button.frame = CGRect(origin: CGPoint(), size: size)

@@ -337,7 +337,8 @@ public final class LiquidLensView: UIView {
         transition.setBounds(view: self.backgroundContainer, bounds: CGRect(origin: CGPoint(), size: params.size))
         self.backgroundContainer.update(size: params.size, isDark: params.isDark, transition: transition)
         
-        transition.setFrame(view: self.backgroundView, frame: CGRect(origin: CGPoint(), size: params.size))
+        transition.setPosition(view: self.backgroundView, position: CGPoint(x: params.size.width * 0.5, y: params.size.height * 0.5))
+        transition.setBounds(view: self.backgroundView, bounds: CGRect(origin: CGPoint(), size: params.size))
         self.backgroundView.update(size: params.size, cornerRadius: params.size.height * 0.5, isDark: params.isDark, tintColor: GlassBackgroundView.TintColor.init(kind: .panel, color: UIColor(white: params.isDark ? 0.0 : 1.0, alpha: 0.6)), isInteractive: true, transition: transition)
         
         transition.setFrame(view: self.contentView, frame: CGRect(origin: CGPoint(), size: params.size))

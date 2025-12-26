@@ -2881,7 +2881,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         let textInputFrame = textInputContainerBackgroundFrame
         
         transition.updateFrame(view: self.accessoryPanelContainer, frame: CGRect(origin: CGPoint(), size: textInputContainerBackgroundFrame.size))
-        transition.updateFrame(view: self.textInputContainerBackgroundView, frame: textInputContainerBackgroundFrame)
+        transition.updateFrameAsPositionAndBounds(layer: self.textInputContainerBackgroundView.layer, frame: textInputContainerBackgroundFrame)
         
         self.updateCounterTextNode(backgroundSize: textInputContainerBackgroundFrame.size, transition: transition)
         
@@ -3278,7 +3278,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         attachmentButtonX += 40.0 + 6.0
         self.attachmentButtonBackground.update(size: attachmentButtonFrame.size, cornerRadius: attachmentButtonFrame.height * 0.5, isDark: interfaceState.theme.overallDarkAppearance, tintColor: .init(kind: .panel, color: interfaceState.theme.chat.inputPanel.inputBackgroundColor.withMultipliedAlpha(0.7)), isInteractive: true, transition: ComponentTransition(transition))
         
-        transition.updateFrame(layer: self.attachmentButtonBackground.layer, frame: attachmentButtonFrame)
+        transition.updateFrameAsPositionAndBounds(layer: self.attachmentButtonBackground.layer, frame: attachmentButtonFrame)
         transition.updateFrame(layer: self.attachmentButton.layer, frame: CGRect(origin: CGPoint(), size: attachmentButtonFrame.size))
         transition.updateFrame(node: self.attachmentButtonDisabledNode, frame: self.attachmentButtonBackground.frame)
         

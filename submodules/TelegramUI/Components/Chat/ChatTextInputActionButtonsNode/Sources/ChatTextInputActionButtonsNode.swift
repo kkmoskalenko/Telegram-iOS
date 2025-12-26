@@ -345,7 +345,7 @@ public final class ChatTextInputActionButtonsNode: ASDisplayNode, ChatSendMessag
             self.textNode.isHidden = true
         }
     
-        transition.updateFrame(view: self.micButtonBackgroundView, frame: CGRect(origin: CGPoint(), size: size))
+        transition.updateFrameAsPositionAndBounds(layer: self.micButtonBackgroundView.layer, frame: CGRect(origin: CGPoint(), size: size))
         self.micButtonBackgroundView.update(size: size, cornerRadius: size.height * 0.5, isDark:  interfaceState.theme.overallDarkAppearance, tintColor: .init(kind: .panel, color: interfaceState.theme.chat.inputPanel.inputBackgroundColor.withMultipliedAlpha(0.7)), isInteractive: true, transition: ComponentTransition(transition))
         
         transition.updateFrame(layer: self.micButton.layer, frame: CGRect(origin: CGPoint(), size: size))
