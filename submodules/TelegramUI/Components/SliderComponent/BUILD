@@ -15,6 +15,8 @@ swift_library(
         "//submodules/TelegramPresentationData",
         "//submodules/LegacyComponents",
         "//submodules/ComponentFlow",
+        "//submodules/TelegramUI/Components/LiquidLens",
+        "//submodules/TelegramUI/Components/LiquidLens:LiquidLensSharedTypes",
     ],
     visibility = [
         "//visibility:public",

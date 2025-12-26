@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import <MetalKit/MetalKit.h>
 
 @interface TGPhotoEditorSliderView : UIControl
 
@@ -45,6 +46,9 @@
 
 @property (nonatomic, assign) bool enablePanHandling;
 @property (nonatomic, assign) bool enableEdgeTap;
+
+@property (nonatomic, copy) void(^contentChanged)(CGImageRef image);
+@property (nonatomic, strong) MTKView *metalView;
 
 - (void)setValue:(CGFloat)value animated:(BOOL)animated;
 

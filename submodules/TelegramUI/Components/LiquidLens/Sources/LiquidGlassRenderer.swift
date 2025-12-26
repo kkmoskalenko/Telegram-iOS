@@ -25,7 +25,7 @@ private func metalLibrary(device: MTLDevice) -> MTLLibrary? {
     return library
 }
 
-final class LiquidGlassRenderer: NSObject, MTKViewDelegate {
+public final class LiquidGlassRenderer: NSObject, MTKViewDelegate {
     
     private let device: MTLDevice
     private let pixelFormat: MTLPixelFormat
@@ -52,10 +52,10 @@ final class LiquidGlassRenderer: NSObject, MTKViewDelegate {
     private var arguments: LiquidGlassArguments = .default()
     private var blurRadius: Int = 1
     
-    var backgroundTexture: MTLTexture?
-    var backgroundOverlayTexture: MTLTexture?
+    private var backgroundTexture: MTLTexture?
+    private var backgroundOverlayTexture: MTLTexture?
     
-    init(with device: MTLDevice, pixelFormat: MTLPixelFormat = .bgra8Unorm) throws {
+    public init(with device: MTLDevice, pixelFormat: MTLPixelFormat = .bgra8Unorm) throws {
         self.device = device
         self.pixelFormat = pixelFormat
         
@@ -183,30 +183,6 @@ final class LiquidGlassRenderer: NSObject, MTKViewDelegate {
         }
     }
     
-    // MARK: - API
-    
-    func loadTexture(from image: CGImage) throws -> MTLTexture {
-        let loader = MTKTextureLoader(device: device)
-        return try loader.newTexture(cgImage: image, options: [.SRGB: false])
-    }
-    
-    func update(view: MTKView, backgroundTexture: MTLTexture, backgroundOverlayTexture: MTLTexture?, arguments: LiquidGlassArguments) {
-        if view.colorPixelFormat != pixelFormat {
-            view.colorPixelFormat = pixelFormat
-        }
-        self.backgroundTexture = backgroundTexture
-        self.backgroundOverlayTexture = backgroundOverlayTexture
-        self.arguments = arguments
-        let requestedBlurRadius = Int(arguments.blurRadius)
-        blurRadius = max(0, min(requestedBlurRadius, 64))
-        self.arguments.blurRadius = Int32(blurRadius)
-        drawableSize = view.drawableSize
-        rebuildRenderTargetsIfNeeded()
-        updateWeightsBuffer(for: blurRadius)
-        updateArgumentsBuffer(for: view)
-        view.setNeedsDisplay()
-    }
-    
     private func updateArgumentsBuffer(for view: MTKView) {
         guard drawableSize.width > 0, drawableSize.height > 0 else { return }
         
@@ -283,14 +259,38 @@ final class LiquidGlassRenderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
     }
     
+    // MARK: - API
+    
+    public func loadTexture(from image: CGImage) throws -> MTLTexture {
+        let loader = MTKTextureLoader(device: device)
+        return try loader.newTexture(cgImage: image, options: [.SRGB: false])
+    }
+    
+    public func update(view: MTKView, backgroundTexture: MTLTexture, backgroundOverlayTexture: MTLTexture?, arguments: LiquidGlassArguments) {
+        if view.colorPixelFormat != pixelFormat {
+            view.colorPixelFormat = pixelFormat
+        }
+        self.backgroundTexture = backgroundTexture
+        self.backgroundOverlayTexture = backgroundOverlayTexture
+        self.arguments = arguments
+        let requestedBlurRadius = Int(arguments.blurRadius)
+        blurRadius = max(0, min(requestedBlurRadius, 64))
+        self.arguments.blurRadius = Int32(blurRadius)
+        drawableSize = view.drawableSize
+        rebuildRenderTargetsIfNeeded()
+        updateWeightsBuffer(for: blurRadius)
+        updateArgumentsBuffer(for: view)
+        view.setNeedsDisplay()
+    }
+    
     // MARK: - MTKViewDelegate
     
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+    public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         drawableSize = size
         rebuildRenderTargetsIfNeeded()
     }
     
-    func draw(in view: MTKView) {
+    public func draw(in view: MTKView) {
         if drawableSize != view.drawableSize {
             drawableSize = view.drawableSize
             rebuildRenderTargetsIfNeeded()

@@ -116,7 +116,21 @@ const CGFloat TGPhotoEditorSliderViewInternalMargin = 7.0f;
 
 - (void)drawRect:(CGRect)__unused rect
 {
-    CGContextRef context = UIGraphicsGetCurrentContext();
+    UIImage *snapshot = [self renderBackgroundSnapshot];
+    if (snapshot == nil) return;
+    
+    if (_contentChanged != nil) {
+        CGImageRef content = CGImageRetain(snapshot.CGImage);
+        _contentChanged(content);
+        CGImageRelease(content);
+    } else {
+        [snapshot drawInRect:self.bounds];
+    }
+}
+
+- (void)drawSliderInContext:(CGContextRef)context rect:(CGRect)rect
+{
+    if (context == nil) return;
     
     CGFloat margin = TGPhotoEditorSliderViewInternalMargin;
     CGFloat visualMargin = _positionsCount > 1 ? margin : 2.0f;
@@ -300,6 +314,24 @@ const CGFloat TGPhotoEditorSliderViewInternalMargin = 7.0f;
     }
 }
 
+- (UIImage *)renderBackgroundSnapshot
+{
+    CGRect bounds = self.bounds;
+    if (CGRectIsEmpty(bounds)) {
+        return nil;
+    }
+    
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat defaultFormat];
+    format.preferredRange = UIGraphicsImageRendererFormatRangeStandard;
+    format.scale = self.contentScaleFactor;
+    format.opaque = false;
+    
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:bounds.size format:format];
+    return [renderer imageWithActions:^(UIGraphicsImageRendererContext * _Nonnull rendererContext) {
+        [self drawSliderInContext:rendererContext.CGContext rect:bounds];
+    }];
+}
+
 #pragma mark -
 
 - (void)setLineSize:(CGFloat)lineSize
@@ -430,6 +462,11 @@ const CGFloat TGPhotoEditorSliderViewInternalMargin = 7.0f;
         _knobView.frame = knobViewFrame;
     else
         _knobView.frame = CGRectMake(knobViewFrame.origin.y, knobViewFrame.origin.x, knobViewFrame.size.width, knobViewFrame.size.height);
+    
+    if (_metalView != nil) {
+        UIEdgeInsets insets = UIEdgeInsetsMake(-10.0, -30.0, -10.0, -30.0);
+        _metalView.frame = UIEdgeInsetsInsetRect(self.bounds, insets);
+    }
     
     [self setNeedsDisplay];
 }

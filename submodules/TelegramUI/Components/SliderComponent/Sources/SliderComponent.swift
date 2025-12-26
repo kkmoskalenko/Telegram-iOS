@@ -1,10 +1,13 @@
 import Foundation
 import UIKit
+import MetalKit
 import Display
 import AsyncDisplayKit
 import TelegramPresentationData
 import LegacyComponents
 import ComponentFlow
+import LiquidLens
+import LiquidLensSharedTypes
 
 public final class SliderComponent: Component {
     public final class Discrete: Equatable {
@@ -125,6 +128,10 @@ public final class SliderComponent: Component {
         private var nativeSliderView: SliderView?
         private var sliderView: TGPhotoEditorSliderView?
         
+        private var legacyLiquidGlassRenderer: LiquidGlassRenderer?
+        private var legacyLiquidGlassView: MTKView?
+        private var legacyContentTexture: MTLTexture?
+        
         private var component: SliderComponent?
         private weak var state: EmptyComponentState?
         
@@ -218,7 +225,7 @@ public final class SliderComponent: Component {
                     if let knobSize = component.knobSize {
                         sliderView.lineSize = knobSize + 4.0
                     } else {
-                        sliderView.lineSize = 4.0
+                        sliderView.lineSize = 6.0
                     }
                     sliderView.trackCornerRadius = sliderView.lineSize * 0.5
                     sliderView.dotSize = 5.0
@@ -253,12 +260,19 @@ public final class SliderComponent: Component {
                             context.fillEllipse(in: CGRect(origin: CGPoint(x: floor((size.width - knobSize) * 0.5), y: floor((size.width - knobSize) * 0.5)), size: CGSize(width: knobSize, height: knobSize)))
                         })
                     } else {
-                        sliderView.knobImage = generateImage(CGSize(width: 40.0, height: 40.0), rotatedContext: { size, context in
-                            context.clear(CGRect(origin: CGPoint(), size: size))
-                            context.setShadow(offset: CGSize(width: 0.0, height: -3.0), blur: 12.0, color: UIColor(white: 0.0, alpha: 0.25).cgColor)
+                        sliderView.knobImage = generateImage(CGSize(width: 38.0, height: 24.0), rotatedContext: { size, context in
+                            let rect = CGRect(origin: CGPoint(), size: size)
+                            let r = min(size.width, size.height) * 0.5
+                            let path = CGPath(roundedRect: rect, cornerWidth: r, cornerHeight: r, transform: nil)
+                            
+                            context.clear(rect)
+                            context.addPath(path)
                             context.setFillColor(UIColor.white.cgColor)
-                            context.fillEllipse(in: CGRect(origin: CGPoint(x: 6.0, y: 6.0), size: CGSize(width: 28.0, height: 28.0)))
+                            context.fillPath()
                         })
+                        sliderView.knobView.layer.shadowOpacity = 0.12
+                        sliderView.knobView.layer.shadowRadius = 4.0
+                        sliderView.knobView.layer.shadowOffset = CGSize(width: 0.0, height: 0.5)
                     }
                     
                     sliderView.frame = CGRect(origin: CGPoint(x: 0.0, y: 0.0), size: size)
@@ -270,6 +284,8 @@ public final class SliderComponent: Component {
                     sliderView.layer.allowsGroupOpacity = true
                     self.sliderView = sliderView
                     self.addSubview(sliderView)
+                    
+                    self.setupLiquidGlassView()
                 }
                 sliderView.lowerBoundTrackColor = component.minTrackForegroundColor
                 switch component.content {
@@ -309,6 +325,7 @@ public final class SliderComponent: Component {
             let floatValue: CGFloat
             if let sliderView = self.sliderView {
                 floatValue = sliderView.value
+                updateLiquidGlassRenderer()
             } else if let nativeSliderView = self.nativeSliderView {
                 floatValue = CGFloat(nativeSliderView.value)
             } else {
@@ -320,6 +337,81 @@ public final class SliderComponent: Component {
             case let .continuous(continuous):
                 continuous.valueUpdated(floatValue)
             }
+        }
+        
+        // MARK: - Liquid Glass Effect with Metal
+            
+        private func setupLiquidGlassView(pixelFormat: MTLPixelFormat = .bgra8Unorm) {
+            guard let sliderView = self.sliderView,
+                  let device = MTLCreateSystemDefaultDevice(),
+                  let renderer = try? LiquidGlassRenderer(with: device, pixelFormat: pixelFormat)
+            else { return }
+            
+            let view = MTKView(frame: .zero, device: device)
+            view.delegate = renderer
+            view.colorPixelFormat = pixelFormat
+            view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            view.isPaused = true
+            view.enableSetNeedsDisplay = true
+            view.isOpaque = false
+            
+            self.legacyLiquidGlassView = view
+            self.legacyLiquidGlassRenderer = renderer
+            
+            sliderView.insertSubview(view, belowSubview: sliderView.knobView)
+            sliderView.metalView = view
+            
+            sliderView.contentChanged = { [weak self] image in
+                guard let self, let image else { return }
+                self.legacyContentTexture = try? self.legacyLiquidGlassRenderer?.loadTexture(from: image)
+                self.updateLiquidGlassRenderer()
+            }
+        }
+
+        private func updateLiquidGlassRenderer() {
+            guard let sliderView = self.sliderView,
+                  let view = self.legacyLiquidGlassView,
+                  let renderer = self.legacyLiquidGlassRenderer,
+                  let bgTexture = self.legacyContentTexture
+            else { return }
+            
+            // TODO: Transition between default knob and liquid glass
+            sliderView.knobView.isHidden = true
+            
+            let knobFrame = sliderView.knobView.frame
+            let lensFrame = knobFrame.insetBy(dx: -knobFrame.width  * 0.25, dy: -knobFrame.height * 0.25)
+            
+            let resolution: SIMD2<Float> = [Float(view.drawableSize.width), Float(view.drawableSize.height)]
+            let dpr = Float(view.contentScaleFactor)
+            
+            let edgeInsets = UIEdgeInsets(top: 10.0, left: 30.0, bottom: 10.0, right: 30.0)
+            let topLeftInset: SIMD2<Float> = dpr * [Float(edgeInsets.left), Float(edgeInsets.top)]
+            let bottomRightInset: SIMD2<Float> = dpr * [Float(edgeInsets.right), Float(edgeInsets.bottom)]
+            let contentSize = resolution - topLeftInset - bottomRightInset
+            
+            let lensPosition: SIMD2<Float> = dpr * [Float(lensFrame.midX), Float(lensFrame.midY)] + topLeftInset
+            let lensWidth = Float(lensFrame.width)
+            let lensHeight = Float(lensFrame.height)
+            
+            let isDark = self.traitCollection.userInterfaceStyle == .dark
+            let arguments = LiquidGlassArguments.default(
+                resolution: resolution,
+                dpr: dpr,
+                mouse: lensPosition,
+                mouseSpring: lensPosition,
+                shadowExpand: 4.0,
+                shadowFactor: 0.12,
+                shadowPosition: [0.0, -1.5],
+                contentOrigin: topLeftInset,
+                contentSize: contentSize,
+                shapeWidth: lensWidth,
+                shapeHeight: lensHeight,
+                shapeRadius: 0.5 * lensHeight,
+                shapeRoundness: 2.0,
+                step: isDark ? 8 : 9
+            )
+            
+            renderer.update(view: view, backgroundTexture: bgTexture, backgroundOverlayTexture: nil, arguments: arguments)
         }
     }
 

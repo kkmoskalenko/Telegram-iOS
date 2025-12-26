@@ -2,7 +2,7 @@ import LiquidLensSharedTypes
 
 extension LiquidGlassArguments {
     
-    static func `default`(
+    public static func `default`(
         resolution: SIMD2<Float> = .zero,
         dpr: Float = 1,
         mouse: SIMD2<Float>? = nil,
