@@ -444,8 +444,8 @@ public final class TabBarComponent: Component {
                     itemTransition.setFrame(view: selectedItemComponentView, frame: itemFrame)
                     
                     if let previousComponent, previousComponent.selectedId != item.id, isItemSelected {
-                        itemComponentView.playSelectionAnimation()
-                        selectedItemComponentView.playSelectionAnimation()
+                        itemComponentView.playSelectionAnimation(delay: 0.1)
+                        selectedItemComponentView.playSelectionAnimation(delay: 0.1)
                     }
                 }
                 if isItemSelected {
@@ -566,9 +566,9 @@ private final class ItemComponent: Component {
             }
         }
         
-        func playSelectionAnimation() {
+        func playSelectionAnimation(delay: Double = 0.0) {
             if let animationIconView = self.animationIcon?.view as? LottieComponent.View {
-                animationIconView.playOnce()
+                animationIconView.playOnce(delay: delay)
             }
         }
         

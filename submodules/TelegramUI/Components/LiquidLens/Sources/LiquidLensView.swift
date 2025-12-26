@@ -369,12 +369,6 @@ public final class LiquidLensView: UIView {
             let legacyLiquidGlassViewFrame = CGRect(origin: CGPoint(), size: params.size).inset(by: legacyLiquidGlassViewEdgeInsets)
             transition.setFrame(view: legacyLiquidGlassView, frame: legacyLiquidGlassViewFrame)
             
-            // TODO: Animate lens transition
-            legacyLiquidGlassView.isHidden = !params.isLifted
-            self.contentView.isHidden = params.isLifted
-            self.liftedContainerView.isHidden = params.isLifted
-            self.legacySelectionView?.isHidden = params.isLifted
-            
             if let legacyDragAnimator = self.legacyDragAnimator {
                 if params.isLifted != previousParams?.isLifted {
                     if params.isLifted {
@@ -433,7 +427,7 @@ extension LiquidLensView {
         guard let device = MTLCreateSystemDefaultDevice(),
               let renderer = try? LiquidGlassRenderer(with: device, pixelFormat: pixelFormat)
         else {
-            assertionFailure("Renderer creation failed")
+            //assertionFailure("Renderer creation failed")
             return
         }
         
@@ -444,6 +438,7 @@ extension LiquidLensView {
         view.isPaused = true
         view.enableSetNeedsDisplay = true
         view.isOpaque = false
+        view.alpha = 0.0
         view.layer.zPosition = 10.0
         
         self.legacyLiquidGlassRenderer = renderer
@@ -453,12 +448,35 @@ extension LiquidLensView {
         self.backgroundContainer.layer.zPosition = 1.0
         self.containerView.addSubview(view)
         
+        let transitionLens: (Bool) -> Void = { [weak self] isLifted in
+            guard let self else { return }
+            
+            let transition: ComponentTransition
+            let delay: Double
+            if isLifted {
+                transition = .immediate
+                delay = 0.0
+            } else {
+                transition = ComponentTransition(animation: .curve(duration: 0.15, curve: .slide))
+                delay = 0.1
+            }
+            
+            if let legacyLiquidGlassView = self.legacyLiquidGlassView,
+               let legacySelectionView = self.legacySelectionView
+            {
+                transition.setAlpha(view: legacyLiquidGlassView, alpha: isLifted ? 1.0 : 0.0, delay: delay)
+                transition.setAlpha(view: self.contentView, alpha: isLifted ? 0.0 : 1.0)
+                transition.setAlpha(view: self.liftedContainerView, alpha: isLifted ? 0.0 : 1.0)
+                transition.setAlpha(view: legacySelectionView, alpha: isLifted ? 0.0 : 1.0, delay: delay)
+            }
+        }
         let dragAnimator = DragAnimator(config: DragAnimator.Config(
             initialValue: 0.0,
             valueRange: 0.0...1.0,
-            initialScale: 1.0,
-            // TODO: Verify the scale is correct
-            pressedScale: 78.0 / 56.0
+            initialScale: 1.1,
+            pressedScale: 75.0 / 56.0 / 1.043,
+            onPressed: { transitionLens(true) },
+            onReleased: { transitionLens(false) }
         ))
         dragAnimator.stateDidChange = { [weak self] state in
             guard let self, let params = self.params else { return }
@@ -504,20 +522,22 @@ extension LiquidLensView {
         let lensWidth = Float(lensFrame.width)
         let lensHeight = Float(lensFrame.height)
         
+        let isDark = self.params?.isDark ?? false
         let arguments = LiquidGlassArguments.default(
             resolution: resolution,
             dpr: dpr,
             mouse: lensPosition,
             mouseSpring: lensPosition,
-            shadowExpand: 8.0,
-            shadowFactor: 0.1,
-            shadowPosition: [0.0, -8.0],
+            shadowExpand: 4.0,
+            shadowFactor: 0.15,
+            shadowPosition: [0.0, -4.0],
             contentOrigin: topLeftInset,
             contentSize: contentSize,
             shapeWidth: lensWidth,
             shapeHeight: lensHeight,
             shapeRadius: 0.5 * lensHeight,
-            shapeRoundness: 2.0
+            shapeRoundness: 2.0,
+            step: isDark ? 8 : 9
         )
         
         renderer.update(view: view, backgroundTexture: bgTexture, backgroundOverlayTexture: bgOverlayTexture, arguments: arguments)
@@ -550,7 +570,7 @@ extension LiquidLensView {
             self.legacyContentTexture = try renderer.loadTexture(from: defaultImage.cgImage!)
             self.legacySelectedContentTexture = try renderer.loadTexture(from: selectedImage.cgImage!)
         } catch {
-            assertionFailure("Texture creation failed: \(error)")
+            //assertionFailure("Texture creation failed: \(error)")
         }
     }
 }

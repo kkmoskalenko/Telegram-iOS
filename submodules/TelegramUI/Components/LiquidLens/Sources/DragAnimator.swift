@@ -8,19 +8,25 @@ public final class DragAnimator {
         public let visibilityThreshold: CGFloat
         public let initialScale: CGFloat
         public let pressedScale: CGFloat
+        public let onPressed: (() -> Void)?
+        public let onReleased: (() -> Void)?
 
         public init(
             initialValue: CGFloat,
             valueRange: ClosedRange<CGFloat>,
             visibilityThreshold: CGFloat = 0.001,
             initialScale: CGFloat = 1,
-            pressedScale: CGFloat = 1.5
+            pressedScale: CGFloat = 1.5,
+            onPressed: (() -> Void)? = nil,
+            onReleased: (() -> Void)? = nil
         ) {
             self.initialValue = initialValue
             self.valueRange = valueRange
             self.visibilityThreshold = visibilityThreshold
             self.initialScale = initialScale
             self.pressedScale = pressedScale
+            self.onPressed = onPressed
+            self.onReleased = onReleased
         }
     }
 
@@ -112,6 +118,7 @@ public final class DragAnimator {
         velocityTracker.resetTracking()
         pressTarget = 1
         scaleTarget = config.pressedScale
+        config.onPressed?()
         startDisplayLinkIfNeeded()
     }
 
@@ -174,6 +181,7 @@ public final class DragAnimator {
             releasePending = false
             pressTarget = 0
             scaleTarget = config.initialScale
+            config.onReleased?()
         }
     }
 
